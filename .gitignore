@@ -13,9 +13,13 @@ venv/
 *.ipynb_checkpoints/
 .DS_Store
 
-# Generated OCR output — keep the placeholder but not the CSVs
+# Generated OCR / extraction output — keep placeholders but not the artifacts
 results/*.csv
 results/*.json
+results/**/*.csv
+results/**/*.json
+results/**/*.txt
+!results/**/.gitkeep
 
 # Generated images — keep placeholders and ground truth
 data/samples/*
