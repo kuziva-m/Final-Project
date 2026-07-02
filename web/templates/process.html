@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Review extracted rows{% endblock %}
+{% block content %}
+  <h2>Review extracted rows</h2>
+  <p>
+    Source: <code>{{ source_file }}</code> &middot;
+    Rows extracted from: <strong>{{ used_engine }}</strong>
+  </p>
+
+  <div class="previews">
+    <figure>
+      <figcaption>Raw upload</figcaption>
+      <img src="{{ url_for('uploaded_file', filename=raw_filename) }}" alt="Raw upload">
+    </figure>
+    <figure>
+      <figcaption>Preprocessed</figcaption>
+      <img src="{{ url_for('processed_file', filename=processed_filename) }}" alt="Preprocessed image">
+    </figure>
+  </div>
+
+  <form action="{{ url_for('save') }}" method="post" class="rows-form">
+    <input type="hidden" name="source_file" value="{{ source_file }}">
+    <input type="hidden" name="num_rows" value="{{ rows|length }}">
+
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Item</th>
+          <th>Qty</th>
+          <th>Price</th>
+          <th>Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td><input type="text" name="date_{{ loop.index0 }}" value="{{ row.date }}"></td>
+          <td><input type="text" name="item_{{ loop.index0 }}" value="{{ row.item }}"></td>
+          <td><input type="text" name="qty_{{ loop.index0 }}" value="{{ row.qty }}"></td>
+          <td><input type="text" name="price_{{ loop.index0 }}" value="{{ row.price }}"></td>
+          <td><input type="text" name="total_{{ loop.index0 }}" value="{{ row.total }}"></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <button type="submit">Save records</button>
+  </form>
+
+  <details>
+    <summary>Raw OCR text (for reference)</summary>
+    <div class="raw-text-columns">
+      <div>
+        <h3>Tesseract (cleaned image)</h3>
+        <pre>{{ tesseract_text }}</pre>
+      </div>
+      <div>
+        <h3>EasyOCR (raw image)</h3>
+        <pre>{{ easyocr_text }}</pre>
+      </div>
+    </div>
+  </details>
+{% endblock %}

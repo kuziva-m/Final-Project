@@ -29,3 +29,8 @@ data/processed/*
 !data/processed/.gitkeep
 data/debug/*
 !data/debug/.gitkeep
+data/uploads/*
+!data/uploads/.gitkeep
+
+# SQLite database created by web/app.py at runtime
+data/records.db
