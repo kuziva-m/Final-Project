@@ -47,18 +47,4 @@
 
     <button type="submit">Save records</button>
   </form>
-
-  <details>
-    <summary>Raw OCR text (for reference)</summary>
-    <div class="raw-text-columns">
-      <div>
-        <h3>Tesseract (cleaned image)</h3>
-        <pre>{{ tesseract_text }}</pre>
-      </div>
-      <div>
-        <h3>EasyOCR (raw image)</h3>
-        <pre>{{ easyocr_text }}</pre>
-      </div>
-    </div>
-  </details>
 {% endblock %}

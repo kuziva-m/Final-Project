@@ -4,16 +4,13 @@ web/app.py -- minimal Flask front end for the OCR ledger pipeline.
 No new OCR/preprocessing/extraction logic lives here; this module only wires
 together the existing pipeline:
 
-    preprocessing.clean.preprocess   -- deskew/denoise/CLAHE/binarise
-    ocr.compare.run_easyocr          -- on the raw upload
-    ocr.compare.run_tesseract        -- on the preprocessed upload
-    extraction.fields.extract_fields -- raw OCR text -> structured rows
+    preprocessing.clean.preprocess -- deskew/denoise/CLAHE/binarise
+    ocr.fusion.fuse                -- Tesseract-on-cleaned + EasyOCR-on-raw,
+                                       fused into structured rows
 
-Pipeline rule (see ocr/compare.py): Tesseract reads the preprocessed image
-better (deskew fixes its dropped decimals / 5-vs-S errors); EasyOCR is already
-tolerant of raw skew. Extraction tries the Tesseract-on-cleaned text first
-since it is the stronger source for structured numbers, falling back to
-EasyOCR-on-raw only if Tesseract yields no parseable rows.
+See ocr/fusion.py for the fusion rule: Tesseract's rows are the structural
+skeleton (date, item, column layout); EasyOCR supplies clean numeric values
+where the two disagree.
 
 Run:
     python -m web.app
@@ -50,8 +47,8 @@ from flask import (
 )
 from werkzeug.utils import secure_filename
 
-from extraction.fields import FIELDNAMES, extract_fields
-from ocr.compare import run_easyocr, run_tesseract
+from extraction.fields import FIELDNAMES
+from ocr.fusion import fuse
 from preprocessing.clean import preprocess
 
 # ---------------------------------------------------------------------------
@@ -171,15 +168,11 @@ def process():
     processed_path = PROCESSED_DIR / processed_filename
     preprocess(img, save_path=processed_path)
 
-    # Pipeline rule: Tesseract on the cleaned image, EasyOCR on the raw image.
-    tesseract_text = run_tesseract(processed_path)
-    easyocr_text = run_easyocr(raw_path)
-
-    rows = extract_fields(tesseract_text)
-    used_engine = "tesseract"
-    if not rows:
-        rows = extract_fields(easyocr_text)
-        used_engine = "easyocr"
+    # Fuse Tesseract-on-cleaned (row structure) with EasyOCR-on-raw (clean
+    # values). Passing the already-computed processed_path means fuse() reuses
+    # it instead of preprocessing a second time.
+    rows = fuse(raw_path, processed_path=processed_path)
+    used_engine = "fused (tesseract + easyocr)"
 
     if not rows:
         # Never dead-end the owner with nothing to correct -- give one blank row.
@@ -193,8 +186,6 @@ def process():
         raw_filename=raw_filename,
         processed_filename=processed_filename,
         used_engine=used_engine,
-        tesseract_text=tesseract_text,
-        easyocr_text=easyocr_text,
     )
 
 
