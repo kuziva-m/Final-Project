@@ -1,0 +1,6 @@
+pytesseract
+easyocr
+opencv-python
+pillow
+numpy
+jiwer
