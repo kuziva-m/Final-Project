@@ -1,113 +1,254 @@
+/* Chinhoyi University of Technology palette: institutional, flat, one accent
+   colour. No gradients, no glassmorphism, no rounded "card" boxes, no shadows. */
+
+:root {
+  --color-primary: #1C75BC; /* CUT blue */
+  --color-accent: #C79A3B;  /* CUT gold -- the only accent colour used */
+  --color-text: #333333;
+  --color-bg: #FFFFFF;
+  --color-border: #CCCCCC;
+  --color-zebra: #F2F2F2;
+  --color-accent-tint: #FBF3E1;
+  --radius: 2px;
+}
+
 * { box-sizing: border-box; }
 
 body {
-  font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
-  color: #1f2328;
-  background: #fafafa;
-  max-width: 900px;
-  margin: 0 auto;
-  padding: 1.5rem;
-  line-height: 1.5;
-}
-
-header {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  border-bottom: 1px solid #d0d7de;
-  padding-bottom: 0.75rem;
-  margin-bottom: 1.25rem;
-}
-
-header h1 {
-  font-size: 1.25rem;
+  font-family: "Segoe UI", Arial, sans-serif;
+  color: var(--color-text);
+  background: var(--color-bg);
   margin: 0;
+  line-height: 1.6;
 }
 
-header h1 a {
-  color: inherit;
+h1, h2, h3 {
+  color: var(--color-text);
+  font-weight: 600;
+  margin: 0 0 0.75rem;
+}
+
+h2 { font-size: 1.4rem; }
+
+a {
+  color: var(--color-primary);
+}
+
+/* ---------------------------------------------------------------------- */
+/* Header -- solid blue bar, full width, thin gold underline              */
+/* ---------------------------------------------------------------------- */
+
+.site-header {
+  background: var(--color-primary);
+  border-bottom: 3px solid var(--color-accent);
+}
+
+.header-inner {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 1rem 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
   text-decoration: none;
+}
+
+.brand .logo {
+  height: 48px;
+  width: auto;
+}
+
+.brand-text .university {
+  color: #ffffff;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.9;
+}
+
+.brand-text .app-name {
+  color: #ffffff;
+  font-size: 1.2rem;
+  font-weight: 600;
 }
 
 nav a {
-  margin-left: 1rem;
-  color: #0969da;
+  color: #ffffff;
+  margin-left: 1.5rem;
   text-decoration: none;
   font-size: 0.9rem;
+  padding-bottom: 3px;
+  border-bottom: 2px solid transparent;
 }
 
 nav a:hover {
-  text-decoration: underline;
+  border-bottom-color: var(--color-accent);
 }
+
+/* ---------------------------------------------------------------------- */
+/* Page container                                                          */
+/* ---------------------------------------------------------------------- */
+
+.container {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Flash messages                                                          */
+/* ---------------------------------------------------------------------- */
 
 .flashes {
   list-style: none;
-  padding: 0.75rem 1rem;
-  margin: 0 0 1.25rem;
-  background: #fff8c5;
-  border: 1px solid #d4a72c;
-  border-radius: 6px;
+  padding: 0.85rem 1rem;
+  margin: 0 0 1.5rem;
+  background: var(--color-accent-tint);
+  border: 1px solid var(--color-accent);
+  border-left-width: 4px;
+  border-radius: var(--radius);
+  color: var(--color-text);
 }
 
 .flashes li + li {
-  margin-top: 0.25rem;
+  margin-top: 0.35rem;
 }
+
+/* ---------------------------------------------------------------------- */
+/* Forms and buttons                                                       */
+/* ---------------------------------------------------------------------- */
 
 .upload-form {
   display: flex;
   gap: 0.75rem;
   align-items: center;
+  flex-wrap: wrap;
+}
+
+input[type="file"],
+input[type="text"] {
+  font-family: inherit;
+  font-size: 0.95rem;
+  color: var(--color-text);
+}
+
+input[type="file"] {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 0.4rem;
 }
 
 button {
-  background: #1f883d;
-  color: #fff;
-  border: none;
-  border-radius: 6px;
-  padding: 0.5rem 1rem;
+  background: var(--color-primary);
+  color: #ffffff;
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius);
+  padding: 0.55rem 1.25rem;
+  font-family: inherit;
   font-size: 0.95rem;
   cursor: pointer;
 }
 
 button:hover {
-  background: #1a7f37;
+  background: var(--color-accent);
+  border-color: var(--color-accent);
 }
+
+button:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Tables                                                                   */
+/* ---------------------------------------------------------------------- */
 
 table {
   width: 100%;
   border-collapse: collapse;
-  margin: 1rem 0;
+  margin: 1.25rem 0;
 }
 
 th, td {
-  border: 1px solid #d0d7de;
-  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--color-border);
+  padding: 0.55rem 0.7rem;
   text-align: left;
+  font-size: 0.95rem;
 }
 
-th {
-  background: #f6f8fa;
+thead th {
+  background: var(--color-primary);
+  color: #ffffff;
+  font-weight: 600;
+  border-color: var(--color-primary);
+}
+
+tbody tr:nth-child(even) {
+  background: var(--color-zebra);
+}
+
+tbody tr:nth-child(odd) {
+  background: var(--color-bg);
 }
 
 td input[type="text"] {
   width: 100%;
   border: 1px solid transparent;
-  padding: 0.25rem;
+  padding: 0.3rem;
   background: transparent;
-  font-size: 0.95rem;
 }
 
 td input[type="text"]:focus {
-  border-color: #0969da;
-  background: #fff;
+  border-color: var(--color-primary);
+  background: #ffffff;
   outline: none;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Review page -- "you are editing" banner + image previews                */
+/* ---------------------------------------------------------------------- */
+
+.review-banner {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-primary);
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.review-banner .thumb {
+  width: 140px;
+  height: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  flex-shrink: 0;
+}
+
+.review-banner .meta p {
+  margin: 0.15rem 0;
+  font-size: 0.95rem;
+}
+
+.review-banner .filename {
+  font-weight: 600;
+  color: var(--color-primary);
 }
 
 .previews {
   display: flex;
   gap: 1.5rem;
   flex-wrap: wrap;
-  margin: 1rem 0;
+  margin: 1rem 0 1.5rem;
 }
 
 .previews figure {
@@ -117,18 +258,12 @@ td input[type="text"]:focus {
 .previews img {
   max-width: 320px;
   max-height: 260px;
-  border: 1px solid #d0d7de;
-  border-radius: 4px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
 }
 
 .previews figcaption {
   font-size: 0.85rem;
-  color: #57606a;
-  margin-bottom: 0.25rem;
-}
-
-code {
-  background: #f6f8fa;
-  padding: 0.1rem 0.35rem;
-  border-radius: 4px;
+  color: var(--color-text);
+  margin-bottom: 0.35rem;
 }

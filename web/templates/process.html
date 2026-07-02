@@ -2,10 +2,14 @@
 {% block title %}Review extracted rows{% endblock %}
 {% block content %}
   <h2>Review extracted rows</h2>
-  <p>
-    Source: <code>{{ source_file }}</code> &middot;
-    Rows extracted from: <strong>{{ used_engine }}</strong>
-  </p>
+
+  <div class="review-banner">
+    <img class="thumb" src="{{ url_for('processed_file', filename=processed_filename) }}" alt="Processed thumbnail of {{ source_file }}">
+    <div class="meta">
+      <p>You are editing: <span class="filename">{{ source_file }}</span></p>
+      <p>Rows extracted from: <strong>{{ used_engine }}</strong></p>
+    </div>
+  </div>
 
   <div class="previews">
     <figure>

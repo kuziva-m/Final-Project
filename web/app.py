@@ -222,7 +222,13 @@ def save():
 
 @app.route("/export/<fmt>")
 def export(fmt: str):
-    """Download all saved records as CSV or JSON."""
+    """Download all saved records as CSV or JSON.
+
+    The download is named after the source image when every exported record
+    came from the same upload; a flash confirms exactly what was exported
+    (visible on the next page view, since a file download doesn't navigate
+    the browser away from the current page).
+    """
     if fmt not in ("csv", "json"):
         flash(f"Unknown export format '{fmt}'. Use 'csv' or 'json'.")
         return redirect(url_for("index"))
@@ -230,6 +236,20 @@ def export(fmt: str):
     db = get_db()
     columns = ["id", "date", "item", "qty", "price", "total", "source_file", "created_at"]
     records = [dict(row) for row in db.execute(f"SELECT {', '.join(columns)} FROM records ORDER BY id")]
+
+    sources = {r["source_file"] for r in records if r["source_file"]}
+    if len(sources) == 1:
+        export_stem = Path(next(iter(sources))).stem
+    elif sources:
+        export_stem = "records_multiple_sources"
+    else:
+        export_stem = "records"
+    download_name = f"{export_stem}.{fmt}"
+
+    confirmation = f"Exported {len(records)} record(s) as {download_name}"
+    if len(sources) == 1:
+        confirmation += f" (source: {next(iter(sources))})"
+    flash(confirmation + ".")
 
     if fmt == "csv":
         buf = io.StringIO()
@@ -239,7 +259,7 @@ def export(fmt: str):
         return Response(
             buf.getvalue(),
             mimetype="text/csv",
-            headers={"Content-Disposition": "attachment; filename=records.csv"},
+            headers={"Content-Disposition": f"attachment; filename={download_name}"},
         )
 
     import json
@@ -247,7 +267,7 @@ def export(fmt: str):
     return Response(
         json.dumps(records, indent=2, ensure_ascii=False),
         mimetype="application/json",
-        headers={"Content-Disposition": "attachment; filename=records.json"},
+        headers={"Content-Disposition": f"attachment; filename={download_name}"},
     )
 
 
