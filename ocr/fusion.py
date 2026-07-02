@@ -17,7 +17,15 @@ Fusion keeps each engine's strength:
    row order.
 3. On a numeric field (qty, price, total) where the two disagree, EasyOCR's
    value wins *when it is a valid number of the right shape*; otherwise the
-   Tesseract value is kept. Date and item always come from the skeleton.
+   Tesseract value is kept.
+4. The date is treated the same way -- it is digit-heavy and Tesseract
+   corrupts digits just as it does other numbers -- so EasyOCR's date wins
+   whenever it parses as a valid date. Item text always comes from the
+   skeleton.
+5. Once price and total are both filled, any trailing bare-numeric tokens
+   left in the item text (a stray corrupted amount Tesseract couldn't
+   classify, e.g. "300" for a mangled "3.00") are stripped, since a valid
+   price/total makes that leftover redundant noise rather than data.
 
 Every decision is logged (which engine won each field) so the fusion is fully
 transparent and auditable -- there is no model, only rules.
@@ -44,7 +52,9 @@ from pathlib import Path
 
 from extraction.fields import (
     FIELDNAMES,
+    _DATE_RE,
     _INT_RE,
+    _MONEY_RE,
     extract_fields,
     rows_to_csv,
 )
@@ -83,6 +93,10 @@ def _valid_int(value: str) -> bool:
     return bool(value) and bool(_INT_RE.fullmatch(value.strip()))
 
 
+def _valid_date(value: str) -> bool:
+    return bool(value) and bool(_DATE_RE.fullmatch(value.strip()))
+
+
 def _choose_numeric(te_val: str, eo_val: str, is_valid) -> tuple[str, str]:
     """Fuse one numeric field. Return ``(value, winner)``.
 
@@ -106,6 +120,38 @@ def _choose_numeric(te_val: str, eo_val: str, is_valid) -> tuple[str, str]:
     if eo_val:
         return eo_val, "easyocr"
     return te_val, "tesseract"
+
+
+def _choose_date(te_val: str, eo_val: str) -> tuple[str, str]:
+    """Fuse the date field. Return ``(value, winner)``.
+
+    Dates are digit-heavy, so Tesseract corrupts them the same way it
+    corrupts other numbers. EasyOCR's date wins whenever it parses as a valid
+    date; Tesseract's is the fallback since it is the row's anchor and is
+    therefore always present.
+    """
+    te_val = (te_val or "").strip()
+    eo_val = (eo_val or "").strip()
+
+    if te_val == eo_val:
+        return te_val, "agree"
+    if _valid_date(eo_val):
+        return eo_val, "easyocr"
+    return te_val, "tesseract"
+
+
+def _strip_trailing_numeric(item: str) -> str:
+    """Strip trailing bare-numeric tokens from an item string.
+
+    Only whole tokens that are purely a number (``_INT_RE`` or ``_MONEY_RE``)
+    are removed -- a unit-suffixed token like "2kg" has letters attached and
+    is left alone. If the entire item turns out to be numeric noise, it is
+    cleared rather than left as a lone stray number.
+    """
+    tokens = item.split()
+    while tokens and (_INT_RE.fullmatch(tokens[-1]) or _MONEY_RE.fullmatch(tokens[-1])):
+        tokens.pop()
+    return " ".join(tokens)
 
 
 # ---------------------------------------------------------------------------
@@ -176,20 +222,31 @@ def fuse_from_texts(
 
     for idx, (te, eo) in enumerate(_align(te_rows, eo_rows)):
         eo = eo or {}
-        date = te.get("date", "")
         item = te.get("item", "")
 
+        date, date_win = _choose_date(te.get("date", ""), eo.get("date", ""))
         qty, qty_win = _choose_numeric(te.get("qty", ""), eo.get("qty", ""), _valid_int)
         price, price_win = _choose_numeric(te.get("price", ""), eo.get("price", ""), _valid_money)
         total, total_win = _choose_numeric(te.get("total", ""), eo.get("total", ""), _valid_money)
 
+        if price and total:
+            # Numeric fields are complete -- any trailing digits still stuck
+            # in the item text are leftover noise, not data (see rule 5).
+            item = _strip_trailing_numeric(item)
+
         logger.info(
-            "row %d [%s %r]: qty<-%s price<-%s total<-%s",
-            idx, date or "?", item or "?", qty_win, price_win, total_win,
+            "row %d [%s %r]: date<-%s qty<-%s price<-%s total<-%s",
+            idx, date or "?", item or "?", date_win, qty_win, price_win, total_win,
         )
 
         fused.append({"date": date, "item": item, "qty": qty, "price": price, "total": total})
-        provenance.append({"date": date, "qty": qty_win, "price": price_win, "total": total_win})
+        provenance.append({
+            "date": date,
+            "date_source": date_win,
+            "qty": qty_win,
+            "price": price_win,
+            "total": total_win,
+        })
 
     if return_provenance:
         return fused, provenance
