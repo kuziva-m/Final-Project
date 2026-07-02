@@ -268,4 +268,5 @@ init_db()
 
 if __name__ == "__main__":
     debug = os.environ.get("FLASK_DEBUG", "0") == "1"
-    app.run(host="127.0.0.1", port=5000, debug=debug)
+    # 0.0.0.0:7860 matches the Hugging Face Spaces container convention.
+    app.run(host="0.0.0.0", port=7860, debug=debug)

@@ -1,0 +1,16 @@
+.git/
+.vscode/
+.claude/
+__pycache__/
+*.pyc
+*.ipynb_checkpoints/
+
+# Runtime data -- created fresh in the container, not baked into the image.
+data/uploads/*
+data/processed/*
+data/debug/*
+data/records.db
+results/**/*.csv
+results/**/*.json
+results/**/*.txt
+!**/.gitkeep
