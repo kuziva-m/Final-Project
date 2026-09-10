@@ -1,7 +1,0 @@
-services:
-  - type: web
-    name: ledger-ocr-api
-    runtime: docker
-    plan: free
-    dockerfilePath: ./Dockerfile
-    healthCheckPath: /health

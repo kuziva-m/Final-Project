@@ -1,16 +1,18 @@
 """
-web/app.py -- minimal Flask front end for the OCR ledger pipeline.
+web/app.py -- Flask front end for the OCR ledger pipeline, serving both the
+HTML review UI and a JSON API for the companion mobile app.
 
 No new OCR/preprocessing/extraction logic lives here; this module only wires
 together the existing pipeline:
 
     preprocessing.clean.preprocess -- deskew/denoise/CLAHE/binarise
-    ocr.fusion.fuse                -- Tesseract-on-cleaned + EasyOCR-on-raw,
-                                       fused into structured rows
+    ocr.fusion.run_engines         -- Tesseract-on-cleaned + EasyOCR-on-raw
+    ocr.fusion.fuse_from_texts     -- fused into structured rows + provenance
 
 See ocr/fusion.py for the fusion rule: Tesseract's rows are the structural
 skeleton (date, item, column layout); EasyOCR supplies clean numeric values
-where the two disagree.
+where the two disagree, and every decision is logged (provenance) so the
+result is auditable -- no model, only rules.
 
 Run:
     python -m web.app
@@ -39,6 +41,7 @@ from flask import (
     Response,
     flash,
     g,
+    jsonify,
     redirect,
     render_template,
     request,
@@ -48,7 +51,7 @@ from flask import (
 from werkzeug.utils import secure_filename
 
 from extraction.fields import FIELDNAMES
-from ocr.fusion import fuse
+from ocr.fusion import fuse_from_texts, run_engines
 from preprocessing.clean import preprocess
 
 # ---------------------------------------------------------------------------
@@ -126,8 +129,83 @@ def _unique_stem(original_filename: str) -> str:
     return f"{timestamp}_{stem}"
 
 
+def _run_pipeline_on_upload(upload) -> tuple[dict | None, str | None]:
+    """Save *upload*, run preprocess + fusion, and return the result.
+
+    Shared by the HTML /process route and the JSON /api/scan route so both
+    surfaces run the exact same pipeline. Returns ``(artifacts, None)`` on
+    success or ``(None, error_message)`` on a validation/decode failure.
+
+    ``artifacts`` keys: rows, provenance, used_engine, source_file,
+    raw_filename, processed_filename.
+    """
+    if upload is None or upload.filename == "":
+        return None, "No file selected. Choose an image and try again."
+
+    if not _allowed_file(upload.filename):
+        return None, f"Unsupported file type. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}"
+
+    stem = _unique_stem(upload.filename)
+    ext = Path(secure_filename(upload.filename)).suffix.lower()
+    raw_filename = f"{stem}{ext}"
+    raw_path = UPLOADS_DIR / raw_filename
+    upload.save(str(raw_path))
+
+    img = cv2.imread(str(raw_path), cv2.IMREAD_UNCHANGED)
+    if img is None:
+        raw_path.unlink(missing_ok=True)
+        return None, "Could not read that image. It may be corrupt or an unsupported format."
+
+    processed_filename = f"{stem}_clean.png"
+    processed_path = PROCESSED_DIR / processed_filename
+    preprocess(img, save_path=processed_path)
+
+    # Tesseract-on-cleaned (row structure) + EasyOCR-on-raw (clean values),
+    # each engine called once, then fused with provenance -- which engine
+    # won each field -- so the review UI can show what fusion auto-corrected.
+    tesseract_text, easyocr_text = run_engines(raw_path, processed_path=processed_path)
+    rows, provenance = fuse_from_texts(tesseract_text, easyocr_text, return_provenance=True)
+    used_engine = "fused (tesseract + easyocr)"
+
+    if not rows:
+        # Never dead-end the owner with nothing to correct -- give one blank row.
+        rows = [{k: "" for k in FIELDNAMES}]
+        provenance = [{}]
+        used_engine = "none (manual entry)"
+
+    return {
+        "rows": rows,
+        "provenance": provenance,
+        "used_engine": used_engine,
+        "source_file": raw_filename,
+        "raw_filename": raw_filename,
+        "processed_filename": processed_filename,
+    }, None
+
+
+def _save_rows(source_file: str, rows: list[dict]) -> int:
+    """Insert non-blank *rows* into SQLite under *source_file*; return count saved."""
+    created_at = datetime.now(timezone.utc).isoformat()
+    db = get_db()
+    saved = 0
+    for row in rows:
+        clean = {field: str(row.get(field, "") or "").strip() for field in FIELDNAMES}
+        if not any(clean.values()):
+            continue  # skip fully-blank rows (e.g. an unused manual-entry row)
+        db.execute(
+            """
+            INSERT INTO records (date, item, qty, price, total, source_file, created_at)
+            VALUES (:date, :item, :qty, :price, :total, :source_file, :created_at)
+            """,
+            {**clean, "source_file": source_file, "created_at": created_at},
+        )
+        saved += 1
+    db.commit()
+    return saved
+
+
 # ---------------------------------------------------------------------------
-# Routes
+# HTML routes
 # ---------------------------------------------------------------------------
 
 
@@ -140,52 +218,18 @@ def index():
 @app.route("/process", methods=["POST"])
 def process():
     """Save the upload, run the pipeline, and show an editable rows table."""
-    upload = request.files.get("image")
-
-    if upload is None or upload.filename == "":
-        flash("No file selected. Choose an image and try again.")
+    artifacts, error = _run_pipeline_on_upload(request.files.get("image"))
+    if error:
+        flash(error)
         return redirect(url_for("index"))
-
-    if not _allowed_file(upload.filename):
-        flash(
-            f"Unsupported file type. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}"
-        )
-        return redirect(url_for("index"))
-
-    stem = _unique_stem(upload.filename)
-    ext = Path(secure_filename(upload.filename)).suffix.lower()
-    raw_filename = f"{stem}{ext}"
-    raw_path = UPLOADS_DIR / raw_filename
-    upload.save(str(raw_path))
-
-    img = cv2.imread(str(raw_path), cv2.IMREAD_UNCHANGED)
-    if img is None:
-        raw_path.unlink(missing_ok=True)
-        flash("Could not read that image. It may be corrupt or an unsupported format.")
-        return redirect(url_for("index"))
-
-    processed_filename = f"{stem}_clean.png"
-    processed_path = PROCESSED_DIR / processed_filename
-    preprocess(img, save_path=processed_path)
-
-    # Fuse Tesseract-on-cleaned (row structure) with EasyOCR-on-raw (clean
-    # values). Passing the already-computed processed_path means fuse() reuses
-    # it instead of preprocessing a second time.
-    rows = fuse(raw_path, processed_path=processed_path)
-    used_engine = "fused (tesseract + easyocr)"
-
-    if not rows:
-        # Never dead-end the owner with nothing to correct -- give one blank row.
-        rows = [{k: "" for k in FIELDNAMES}]
-        used_engine = "none (manual entry)"
 
     return render_template(
         "process.html",
-        rows=rows,
-        source_file=raw_filename,
-        raw_filename=raw_filename,
-        processed_filename=processed_filename,
-        used_engine=used_engine,
+        rows=artifacts["rows"],
+        source_file=artifacts["source_file"],
+        raw_filename=artifacts["raw_filename"],
+        processed_filename=artifacts["processed_filename"],
+        used_engine=artifacts["used_engine"],
     )
 
 
@@ -198,26 +242,57 @@ def save():
     except ValueError:
         num_rows = 0
 
-    created_at = datetime.now(timezone.utc).isoformat()
-    saved = 0
-
-    db = get_db()
-    for i in range(num_rows):
-        row = {field: request.form.get(f"{field}_{i}", "").strip() for field in FIELDNAMES}
-        if not any(row.values()):
-            continue  # skip fully-blank rows (e.g. an unused manual-entry row)
-        db.execute(
-            """
-            INSERT INTO records (date, item, qty, price, total, source_file, created_at)
-            VALUES (:date, :item, :qty, :price, :total, :source_file, :created_at)
-            """,
-            {**row, "source_file": source_file, "created_at": created_at},
-        )
-        saved += 1
-    db.commit()
+    rows = [
+        {field: request.form.get(f"{field}_{i}", "") for field in FIELDNAMES}
+        for i in range(num_rows)
+    ]
+    saved = _save_rows(source_file, rows)
 
     flash(f"Saved {saved} record(s) from {source_file or 'upload'}.")
     return redirect(url_for("index"))
+
+
+# ---------------------------------------------------------------------------
+# JSON API -- used by the companion mobile app (app/). Same pipeline and
+# SQLite store as the HTML routes above, just JSON in/out instead of
+# server-rendered forms.
+# ---------------------------------------------------------------------------
+
+
+@app.route("/api/health")
+def api_health():
+    """Liveness probe -- the mobile app pings this to detect a cold Space waking up."""
+    return jsonify({"status": "ok"})
+
+
+@app.route("/api/scan", methods=["POST"])
+def api_scan():
+    """Upload a ledger photo, run the pipeline, return rows + provenance as JSON."""
+    artifacts, error = _run_pipeline_on_upload(request.files.get("image"))
+    if error:
+        return jsonify({"error": error}), 400
+
+    return jsonify({
+        "rows": artifacts["rows"],
+        "provenance": artifacts["provenance"],
+        "used_engine": artifacts["used_engine"],
+        "source_file": artifacts["source_file"],
+        "raw_url": url_for("uploaded_file", filename=artifacts["raw_filename"]),
+        "processed_url": url_for("processed_file", filename=artifacts["processed_filename"]),
+    })
+
+
+@app.route("/api/save", methods=["POST"])
+def api_save():
+    """Persist (possibly corrected) rows into SQLite. Body: {source_file, rows}."""
+    body = request.get_json(silent=True) or {}
+    source_file = str(body.get("source_file", "")).strip()
+    rows = body.get("rows", [])
+    if not isinstance(rows, list):
+        return jsonify({"error": "'rows' must be a list."}), 400
+
+    saved = _save_rows(source_file, rows)
+    return jsonify({"saved": saved})
 
 
 @app.route("/export/<fmt>")

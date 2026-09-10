@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Internet: needed to call the Render API. -->
+    <!-- Internet: needed to call the Flask API. -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <!-- Camera: for taking photos directly in the app. -->
     <uses-permission android:name="android.permission.CAMERA"/>
@@ -12,7 +12,7 @@
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
 
     <application
-        android:label="Ledger OCR"
+        android:label="Ledger Digitisation"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:requestLegacyExternalStorage="true">
