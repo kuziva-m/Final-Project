@@ -1,4 +1,4 @@
-// Ledger OCR — Flutter Android app.
+// Ledger Digitisation — Flutter Android app.
 // BEFORE BUILDING: replace kApiBase below with your deployed Render URL.
 
 import 'dart:convert';
@@ -12,15 +12,15 @@ import 'package:image_picker/image_picker.dart';
 const String kApiBase = 'https://YOUR-APP-NAME.onrender.com';
 // ─────────────────────────────────────────────────────────────────────────────
 
-void main() => runApp(const LedgerOcrApp());
+void main() => runApp(const LedgerApp());
 
-class LedgerOcrApp extends StatelessWidget {
-  const LedgerOcrApp({super.key});
+class LedgerApp extends StatelessWidget {
+  const LedgerApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Ledger OCR',
+      title: 'Ledger Digitisation',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF3949AB)),
@@ -31,27 +31,52 @@ class LedgerOcrApp extends StatelessWidget {
   }
 }
 
-// ─── Result model ─────────────────────────────────────────────────────────────
+// ─── Result models ────────────────────────────────────────────────────────
 
-class OcrResult {
-  final String cleanedImageB64;
-  final String tesseractText;
-  final String easyOcrText;
+class ExtractedTable {
+  final List<String> columns;
+  final List<List<String>> rows;
+  final String notes;
 
-  const OcrResult({
-    required this.cleanedImageB64,
-    required this.tesseractText,
-    required this.easyOcrText,
+  const ExtractedTable({
+    required this.columns,
+    required this.rows,
+    required this.notes,
   });
 
-  factory OcrResult.fromJson(Map<String, dynamic> json) => OcrResult(
-        cleanedImageB64: json['cleaned_image'] as String,
-        tesseractText: json['tesseract_text'] as String? ?? '',
-        easyOcrText: json['easyocr_text'] as String? ?? '',
+  factory ExtractedTable.fromJson(Map<String, dynamic> json) => ExtractedTable(
+        columns: List<String>.from(json['columns'] as List),
+        rows: (json['rows'] as List)
+            .map((row) => List<String>.from(row as List))
+            .toList(),
+        notes: json['notes'] as String? ?? '',
       );
 }
 
-// ─── Home screen ──────────────────────────────────────────────────────────────
+class ScanResult {
+  final String scanId;
+  final String cleanedImageB64;
+  final List<ExtractedTable> tables;
+  final double overallConfidence;
+
+  const ScanResult({
+    required this.scanId,
+    required this.cleanedImageB64,
+    required this.tables,
+    required this.overallConfidence,
+  });
+
+  factory ScanResult.fromJson(Map<String, dynamic> json) => ScanResult(
+        scanId: json['scan_id'] as String,
+        cleanedImageB64: json['cleaned_image'] as String,
+        tables: (json['tables'] as List)
+            .map((t) => ExtractedTable.fromJson(t as Map<String, dynamic>))
+            .toList(),
+        overallConfidence: (json['overall_confidence'] as num).toDouble(),
+      );
+}
+
+// ─── Home screen ──────────────────────────────────────────────────────────
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -62,15 +87,26 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final _picker = ImagePicker();
+  final _businessIdController = TextEditingController();
 
   File? _sourceFile;
-  OcrResult? _result;
+  ScanResult? _result;
   String? _error;
-
-  // Three-stage status shown while waiting.
   String? _statusMessage;
 
+  @override
+  void dispose() {
+    _businessIdController.dispose();
+    super.dispose();
+  }
+
   Future<void> _pickAndProcess(ImageSource source) async {
+    final businessId = _businessIdController.text.trim();
+    if (businessId.isEmpty) {
+      setState(() => _error = 'Enter a business ID first.');
+      return;
+    }
+
     final picked = await _picker.pickImage(
       source: source,
       imageQuality: 85,
@@ -91,31 +127,37 @@ class _HomeScreenState extends State<HomeScreen> {
           .get(Uri.parse('$kApiBase/health'))
           .timeout(const Duration(seconds: 30));
     } catch (_) {
-      // Ignore — /process will fail with a clear error if the server is down.
+      // Ignore — /scan will fail with a clear error if the server is down.
     }
 
-    setState(() => _statusMessage = 'Processing image…');
+    setState(() => _statusMessage = 'Reading tables…');
 
     try {
-      final request =
-          http.MultipartRequest('POST', Uri.parse('$kApiBase/process'));
-      request.files
-          .add(await http.MultipartFile.fromPath('file', picked.path));
+      final request = http.MultipartRequest('POST', Uri.parse('$kApiBase/scan'));
+      request.fields['business_id'] = businessId;
+      request.files.add(await http.MultipartFile.fromPath('file', picked.path));
 
-      final streamed = await request
-          .send()
-          .timeout(const Duration(seconds: 120));
+      final streamed =
+          await request.send().timeout(const Duration(seconds: 120));
       final body = await streamed.stream.bytesToString();
 
       if (streamed.statusCode == 200) {
         final data = jsonDecode(body) as Map<String, dynamic>;
         setState(() {
-          _result = OcrResult.fromJson(data);
+          _result = ScanResult.fromJson(data);
           _statusMessage = null;
         });
       } else {
+        String detail = body;
+        try {
+          detail = (jsonDecode(body) as Map<String, dynamic>)['detail']
+                  as String? ??
+              body;
+        } catch (_) {
+          // Body wasn't JSON — fall back to the raw text already assigned.
+        }
         setState(() {
-          _error = 'Server returned ${streamed.statusCode}:\n$body';
+          _error = 'Server returned ${streamed.statusCode}:\n$detail';
           _statusMessage = null;
         });
       }
@@ -139,7 +181,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Ledger OCR'),
+        title: const Text('Ledger Digitisation'),
         centerTitle: true,
         backgroundColor: Theme.of(context).colorScheme.primary,
         foregroundColor: Colors.white,
@@ -149,11 +191,24 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            // ── Business ID ──────────────────────────────────────────────
+            TextField(
+              controller: _businessIdController,
+              enabled: !busy,
+              decoration: const InputDecoration(
+                labelText: 'Business ID',
+                hintText: 'e.g. my-shop-01',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 16),
+
             // ── Buttons ──────────────────────────────────────────────────
             Row(children: [
               Expanded(
                 child: FilledButton.icon(
-                  onPressed: busy ? null : () => _pickAndProcess(ImageSource.camera),
+                  onPressed:
+                      busy ? null : () => _pickAndProcess(ImageSource.camera),
                   icon: const Icon(Icons.camera_alt),
                   label: const Text('Camera'),
                 ),
@@ -161,7 +216,9 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(width: 12),
               Expanded(
                 child: FilledButton.icon(
-                  onPressed: busy ? null : () => _pickAndProcess(ImageSource.gallery),
+                  onPressed: busy
+                      ? null
+                      : () => _pickAndProcess(ImageSource.gallery),
                   icon: const Icon(Icons.photo_library),
                   label: const Text('Gallery'),
                 ),
@@ -193,8 +250,8 @@ class _HomeScreenState extends State<HomeScreen> {
               _SectionLabel('Original'),
               ClipRRect(
                 borderRadius: BorderRadius.circular(8),
-                child: Image.file(_sourceFile!,
-                    height: 200, fit: BoxFit.contain),
+                child:
+                    Image.file(_sourceFile!, height: 200, fit: BoxFit.contain),
               ),
             ],
 
@@ -210,12 +267,19 @@ class _HomeScreenState extends State<HomeScreen> {
                   fit: BoxFit.contain,
                 ),
               ),
-              const SizedBox(height: 20),
-              _SectionLabel('Tesseract'),
-              _OcrTextCard(_result!.tesseractText),
-              const SizedBox(height: 12),
-              _SectionLabel('EasyOCR'),
-              _OcrTextCard(_result!.easyOcrText),
+              const SizedBox(height: 16),
+              _ConfidenceBadge(_result!.overallConfidence),
+              for (var i = 0; i < _result!.tables.length; i++) ...[
+                const SizedBox(height: 20),
+                _SectionLabel(_result!.tables.length > 1
+                    ? 'Table ${i + 1}'
+                    : 'Extracted table'),
+                _TableCard(_result!.tables[i]),
+              ],
+              if (_result!.tables.isEmpty) ...[
+                const SizedBox(height: 16),
+                const Text('No table detected on this page.'),
+              ],
               const SizedBox(height: 24),
             ],
           ],
@@ -225,7 +289,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-// ─── Shared widgets ───────────────────────────────────────────────────────────
+// ─── Shared widgets ─────────────────────────────────────────────────────────
 
 class _SectionLabel extends StatelessWidget {
   final String text;
@@ -244,20 +308,93 @@ class _SectionLabel extends StatelessWidget {
       );
 }
 
-class _OcrTextCard extends StatelessWidget {
-  final String text;
-  const _OcrTextCard(this.text);
+class _ConfidenceBadge extends StatelessWidget {
+  final double confidence;
+  const _ConfidenceBadge(this.confidence);
 
   @override
-  Widget build(BuildContext context) => Card(
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: SelectableText(
-            text.isEmpty ? '(no text detected)' : text,
-            style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
-          ),
+  Widget build(BuildContext context) {
+    final pct = (confidence * 100).round();
+    final Color color;
+    final String label;
+    if (confidence >= 0.8) {
+      color = Colors.green;
+      label = 'High confidence';
+    } else if (confidence >= 0.5) {
+      color = Colors.orange;
+      label = 'Review recommended';
+    } else {
+      color = Colors.red;
+      label = 'Low confidence — please review';
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.circle, size: 10, color: color),
+          const SizedBox(width: 8),
+          Text('$label ($pct%)',
+              style: TextStyle(color: color, fontWeight: FontWeight.w600)),
+        ],
+      ),
+    );
+  }
+}
+
+class _TableCard extends StatelessWidget {
+  final ExtractedTable table;
+  const _TableCard(this.table);
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: DataTable(
+                columns: table.columns
+                    .map((c) => DataColumn(
+                        label: Text(c,
+                            style:
+                                const TextStyle(fontWeight: FontWeight.bold))))
+                    .toList(),
+                rows: table.rows
+                    .map((row) => DataRow(
+                          cells:
+                              row.map((cell) => DataCell(Text(cell))).toList(),
+                        ))
+                    .toList(),
+              ),
+            ),
+            if (table.notes.isNotEmpty) ...[
+              const Divider(),
+              Padding(
+                padding: const EdgeInsets.all(8),
+                child: Text(
+                  'Note: ${table.notes}',
+                  style: TextStyle(
+                    fontStyle: FontStyle.italic,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ],
+          ],
         ),
-      );
+      ),
+    );
+  }
 }
 
 class _ErrorCard extends StatelessWidget {
