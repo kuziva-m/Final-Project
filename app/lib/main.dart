@@ -2,6 +2,11 @@
 // Calls the Flask backend's JSON API (web/app.py): /api/scan runs the real
 // preprocessing + Tesseract/EasyOCR fusion pipeline, /api/save persists the
 // (possibly corrected) rows to the same SQLite store the web UI uses.
+//
+// Visual design matches web/static/style.css exactly: Chinhoyi University of
+// Technology blue/gold, flat institutional style — no gradients, no
+// glassmorphism, no rounded "card" boxes, no drop shadows.
+//
 // BEFORE BUILDING: replace kApiBase below with your deployed Space URL.
 
 import 'dart:convert';
@@ -15,6 +20,15 @@ import 'package:image_picker/image_picker.dart';
 const String kApiBase = 'https://YOUR-USERNAME-YOUR-SPACE.hf.space';
 // ─────────────────────────────────────────────────────────────────────────────────
 
+// ─── Chinhoyi University of Technology palette (matches web/static/style.css) ─────
+const _kPrimary = Color(0xFF1C75BC); // CUT blue
+const _kAccent = Color(0xFFC79A3B); // CUT gold — the only accent colour
+const _kText = Color(0xFF333333);
+const _kBg = Color(0xFFFFFFFF);
+const _kBorder = Color(0xFFCCCCCC);
+const _kAccentTint = Color(0xFFFBF3E1);
+const _kRadius = 2.0; // --radius: 2px — flat, not rounded
+
 void main() => runApp(const LedgerApp());
 
 class LedgerApp extends StatelessWidget {
@@ -22,12 +36,56 @@ class LedgerApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    const colorScheme = ColorScheme.light(
+      primary: _kPrimary,
+      onPrimary: Colors.white,
+      secondary: _kAccent,
+      onSecondary: Colors.white,
+      surface: _kBg,
+      onSurface: _kText,
+      outline: _kBorder,
+    );
+    final base = ThemeData(useMaterial3: true, colorScheme: colorScheme);
+
     return MaterialApp(
       title: 'Ledger Digitisation',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1C75BC)),
-        useMaterial3: true,
+      theme: base.copyWith(
+        scaffoldBackgroundColor: _kBg,
+        textTheme: base.textTheme.apply(bodyColor: _kText, displayColor: _kText),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: _kPrimary,
+          foregroundColor: Colors.white,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          centerTitle: false,
+        ),
+        filledButtonTheme: FilledButtonThemeData(
+          style: FilledButton.styleFrom(
+            backgroundColor: _kPrimary,
+            foregroundColor: Colors.white,
+            elevation: 0,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(_kRadius)),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+          ),
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          isDense: true,
+          filled: false,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(_kRadius),
+            borderSide: const BorderSide(color: _kBorder),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(_kRadius),
+            borderSide: const BorderSide(color: _kBorder),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(_kRadius),
+            borderSide: const BorderSide(color: _kPrimary, width: 2),
+          ),
+        ),
       ),
       home: const HomeScreen(),
     );
@@ -284,12 +342,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final result = _result;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Ledger Digitisation'),
-        centerTitle: true,
-        backgroundColor: Theme.of(context).colorScheme.primary,
-        foregroundColor: Colors.white,
-      ),
+      appBar: _BrandAppBar(),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -315,34 +368,36 @@ class _HomeScreenState extends State<HomeScreen> {
 
             if (busy) ...[
               const SizedBox(height: 32),
-              const Center(child: CircularProgressIndicator()),
+              const Center(
+                child: CircularProgressIndicator(color: _kPrimary),
+              ),
               const SizedBox(height: 12),
-              Center(child: Text(_statusMessage!, style: Theme.of(context).textTheme.bodyMedium)),
+              Center(child: Text(_statusMessage!, style: const TextStyle(color: _kText))),
             ],
 
             if (_error != null) ...[
               const SizedBox(height: 16),
-              _MessageCard(_error!, isError: true),
+              _FlashNotice(_error!),
             ],
 
             if (_saveConfirmation != null) ...[
               const SizedBox(height: 16),
-              _MessageCard(_saveConfirmation!, isError: false),
+              _FlashNotice(_saveConfirmation!),
             ],
 
             if (result != null && !busy) ...[
               const SizedBox(height: 20),
-              _SectionLabel('Preview'),
+              _ReviewBanner(result: result),
+              const SizedBox(height: 16),
+              _SectionLabel('Previews'),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(child: _NetworkPreview(label: 'Raw', url: '$kApiBase${result.rawUrl}')),
+                  Expanded(child: _BorderedPreview(label: 'Raw upload', url: '$kApiBase${result.rawUrl}')),
                   const SizedBox(width: 12),
-                  Expanded(child: _NetworkPreview(label: 'Preprocessed', url: '$kApiBase${result.processedUrl}')),
+                  Expanded(child: _BorderedPreview(label: 'Preprocessed', url: '$kApiBase${result.processedUrl}')),
                 ],
               ),
-              const SizedBox(height: 8),
-              Text('Extracted via: ${result.usedEngine}', style: Theme.of(context).textTheme.bodySmall),
               const SizedBox(height: 20),
               _SectionLabel('Review rows — correct anything before saving'),
               for (var i = 0; i < result.rows.length; i++) ...[
@@ -364,6 +419,60 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
+// ─── Brand app bar ────────────────────────────────────────────────────────
+//
+// Matches web/templates/base.html's .site-header exactly: solid blue bar,
+// the CUT logo, a small-caps university line over the bold app name, and a
+// thin gold underline along the bottom edge.
+
+class _BrandAppBar extends StatelessWidget implements PreferredSizeWidget {
+  const _BrandAppBar();
+
+  @override
+  Widget build(BuildContext context) {
+    return AppBar(
+      titleSpacing: 16,
+      title: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Image.asset('assets/logo.png', height: 40),
+          const SizedBox(width: 12),
+          const Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'CHINHOYI UNIVERSITY OF TECHNOLOGY',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                  letterSpacing: 0.8,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              Text(
+                'MSME Ledger Digitisation',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+      bottom: const PreferredSize(
+        preferredSize: Size.fromHeight(3),
+        child: ColoredBox(color: _kAccent),
+      ),
+    );
+  }
+
+  @override
+  Size get preferredSize => const Size.fromHeight(kToolbarHeight + 3);
+}
+
 // ─── Shared widgets ─────────────────────────────────────────────────────────
 
 class _SectionLabel extends StatelessWidget {
@@ -375,36 +484,85 @@ class _SectionLabel extends StatelessWidget {
         padding: const EdgeInsets.only(bottom: 6),
         child: Text(
           text,
-          style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                color: Theme.of(context).colorScheme.primary,
-                fontWeight: FontWeight.bold,
-              ),
+          style: const TextStyle(color: _kText, fontWeight: FontWeight.w600, fontSize: 16),
         ),
       );
 }
 
-class _NetworkPreview extends StatelessWidget {
+/// Matches .review-banner: a thumbnail plus "Editing: <filename>" /
+/// "Rows extracted from: <used_engine>", blue left border, no shadow.
+class _ReviewBanner extends StatelessWidget {
+  final ScanResult result;
+  const _ReviewBanner({required this.result});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: const BoxDecoration(
+        color: _kBg,
+        border: Border(
+          top: BorderSide(color: _kBorder),
+          right: BorderSide(color: _kBorder),
+          bottom: BorderSide(color: _kBorder),
+          left: BorderSide(color: _kPrimary, width: 4),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text.rich(
+            TextSpan(
+              style: const TextStyle(fontSize: 13, color: _kText),
+              children: [
+                const TextSpan(text: 'Editing: '),
+                TextSpan(
+                  text: result.sourceFile,
+                  style: const TextStyle(color: _kPrimary, fontWeight: FontWeight.w600),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Rows extracted from: ${result.usedEngine}',
+            style: const TextStyle(fontSize: 13, color: _kText),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Matches .previews img: 1px border, 2px radius, no shadow.
+class _BorderedPreview extends StatelessWidget {
   final String label;
   final String url;
-  const _NetworkPreview({required this.label, required this.url});
+  const _BorderedPreview({required this.label, required this.url});
 
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: Theme.of(context).textTheme.bodySmall),
+        Text(label, style: const TextStyle(fontSize: 12, color: _kText)),
         const SizedBox(height: 4),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(4),
-          child: AspectRatio(
-            aspectRatio: 1,
-            child: Image.network(
-              url,
-              fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) => Container(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                child: const Icon(Icons.broken_image),
+        Container(
+          decoration: BoxDecoration(
+            border: Border.all(color: _kBorder),
+            borderRadius: BorderRadius.circular(_kRadius),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(_kRadius - 1),
+            child: AspectRatio(
+              aspectRatio: 1,
+              child: Image.network(
+                url,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) => const ColoredBox(
+                  color: Color(0xFFF2F2F2),
+                  child: Icon(Icons.broken_image, color: _kText),
+                ),
               ),
             ),
           ),
@@ -414,6 +572,8 @@ class _NetworkPreview extends StatelessWidget {
   }
 }
 
+/// One editable ledger row, styled to match the web table's borders/zebra
+/// language: thin grey border, 2px radius, no elevation.
 class _RowCard extends StatelessWidget {
   final int index;
   final LedgerRow row;
@@ -423,30 +583,39 @@ class _RowCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final summary = row.autoCorrectedSummary();
     return Card(
+      elevation: 0,
+      margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(_kRadius),
+        side: const BorderSide(color: _kBorder),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('Row ${index + 1}', style: Theme.of(context).textTheme.labelMedium),
+            Text('Row ${index + 1}', style: const TextStyle(color: _kPrimary, fontWeight: FontWeight.w600, fontSize: 13)),
             const SizedBox(height: 8),
             TextField(
               controller: row.item,
-              decoration: const InputDecoration(labelText: 'Item', isDense: true),
+              style: const TextStyle(color: _kText),
+              decoration: const InputDecoration(labelText: 'Item'),
             ),
             const SizedBox(height: 8),
             Row(children: [
               Expanded(
                 child: TextField(
                   controller: row.date,
-                  decoration: const InputDecoration(labelText: 'Date', isDense: true),
+                  style: const TextStyle(color: _kText),
+                  decoration: const InputDecoration(labelText: 'Date'),
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: TextField(
                   controller: row.qty,
-                  decoration: const InputDecoration(labelText: 'Qty', isDense: true),
+                  style: const TextStyle(color: _kText),
+                  decoration: const InputDecoration(labelText: 'Qty'),
                   keyboardType: TextInputType.number,
                 ),
               ),
@@ -456,7 +625,8 @@ class _RowCard extends StatelessWidget {
               Expanded(
                 child: TextField(
                   controller: row.price,
-                  decoration: const InputDecoration(labelText: 'Price', isDense: true),
+                  style: const TextStyle(color: _kText),
+                  decoration: const InputDecoration(labelText: 'Price'),
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 ),
               ),
@@ -464,21 +634,15 @@ class _RowCard extends StatelessWidget {
               Expanded(
                 child: TextField(
                   controller: row.total,
-                  decoration: const InputDecoration(labelText: 'Total', isDense: true),
+                  style: const TextStyle(color: _kText),
+                  decoration: const InputDecoration(labelText: 'Total'),
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 ),
               ),
             ]),
             if (summary != null) ...[
               const SizedBox(height: 8),
-              Text(
-                summary,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontStyle: FontStyle.italic,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ),
+              _FlashNotice(summary, compact: true),
             ],
           ],
         ),
@@ -487,21 +651,31 @@ class _RowCard extends StatelessWidget {
   }
 }
 
-class _MessageCard extends StatelessWidget {
+/// Matches .flashes exactly: accent-tint background, 1px gold border, 4px
+/// gold left border. Used for every message — errors, confirmations, and
+/// per-row auto-correct notes — the source design has no separate red/green
+/// styling, just this one flat notice treatment.
+class _FlashNotice extends StatelessWidget {
   final String message;
-  final bool isError;
-  const _MessageCard(this.message, {required this.isError});
+  final bool compact;
+  const _FlashNotice(this.message, {this.compact = false});
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final bg = isError ? scheme.errorContainer : scheme.secondaryContainer;
-    final fg = isError ? scheme.onErrorContainer : scheme.onSecondaryContainer;
-    return Card(
-      color: bg,
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Text(message, style: TextStyle(color: fg)),
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: compact ? 10 : 16, vertical: compact ? 6 : 12),
+      decoration: const BoxDecoration(
+        color: _kAccentTint,
+        border: Border(
+          top: BorderSide(color: _kAccent),
+          right: BorderSide(color: _kAccent),
+          bottom: BorderSide(color: _kAccent),
+          left: BorderSide(color: _kAccent, width: 4),
+        ),
+      ),
+      child: Text(
+        message,
+        style: TextStyle(color: _kText, fontSize: compact ? 12 : 14, fontStyle: compact ? FontStyle.italic : FontStyle.normal),
       ),
     );
   }
