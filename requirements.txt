@@ -1,0 +1,10 @@
+pytesseract
+easyocr
+opencv-python
+pillow
+numpy
+jiwer
+spacy
+flask
+# spaCy model (optional, for item-name NER fallback):
+#   python -m spacy download en_core_web_sm

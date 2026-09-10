@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Upload a ledger photo{% endblock %}
+{% block content %}
+  <h2>Upload a ledger photo</h2>
+  <p>
+    Runs preprocessing (deskew / denoise / contrast / binarise), OCR
+    (Tesseract on the cleaned image, EasyOCR on the raw image), then field
+    extraction. You'll get an editable table to correct before saving.
+  </p>
+
+  <form action="{{ url_for('process') }}" method="post" enctype="multipart/form-data" class="upload-form">
+    <input type="file" name="image" accept="image/png,image/jpeg,.tif,.tiff,.bmp,.webp" required>
+    <button type="submit">Process image</button>
+  </form>
+{% endblock %}

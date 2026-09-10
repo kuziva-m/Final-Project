@@ -12,3 +12,25 @@ build/
 venv/
 *.ipynb_checkpoints/
 .DS_Store
+
+# Generated OCR / extraction output — keep placeholders but not the artifacts
+results/*.csv
+results/*.json
+results/**/*.csv
+results/**/*.json
+results/**/*.txt
+!results/**/.gitkeep
+
+# Generated images — keep placeholders and ground truth
+data/samples/*
+!data/samples/.gitkeep
+!data/samples/.gitignore
+data/processed/*
+!data/processed/.gitkeep
+data/debug/*
+!data/debug/.gitkeep
+data/uploads/*
+!data/uploads/.gitkeep
+
+# SQLite database created by web/app.py at runtime
+data/records.db

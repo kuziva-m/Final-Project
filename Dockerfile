@@ -1,21 +1,24 @@
+# Runs the Flask ledger-OCR app (web/app.py) on Hugging Face Spaces.
 FROM python:3.11-slim
 
-# System deps: OpenCV headless runtime libs.
+# tesseract-ocr is the OCR engine used by pytesseract.
+# libgl1 / libglib2.0-0 are required for opencv-python to import on a
+# headless slim image (otherwise: "ImportError: libGL.so.1: cannot open
+# shared object file").
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgl1-mesa-glx \
+    tesseract-ocr \
+    libgl1 \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Install Python deps first (layer-cached unless requirements change).
-COPY api/requirements.txt ./requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt \
+    && python -m spacy download en_core_web_sm
 
-# Copy source.
-COPY preprocessing/ ./preprocessing/
-COPY api/ ./api/
+COPY . .
 
-# Render injects $PORT; default 8000 for local runs.
-ENV PORT=8000
-CMD ["sh", "-c", "uvicorn api.main:app --host 0.0.0.0 --port $PORT"]
+EXPOSE 7860
+
+CMD ["python", "-m", "web.app"]
