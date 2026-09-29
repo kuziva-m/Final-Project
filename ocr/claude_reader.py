@@ -9,7 +9,7 @@ ocr/fusion.py, with two readers:
                    (extraction.fields.FIELDNAMES) the mobile API expects
 
 Enabled only when ANTHROPIC_API_KEY is set. Optional overrides:
-    LEDGER_CLAUDE_MODEL   (default claude-opus-5-5)
+    LEDGER_CLAUDE_MODEL   (default claude-sonnet-5)
     LEDGER_CLAUDE_EFFORT  (default low -- transcription needs little reasoning, and
                           a live demo needs a fast answer)
 """
@@ -25,7 +25,10 @@ import cv2
 
 from extraction.fields import FIELDNAMES
 
-DEFAULT_MODEL = "claude-opus-5-5"
+DEFAULT_MODEL = "claude-sonnet-5"
+# Models documented to accept server-side refusal fallback ("default" mode);
+# other models get the plain request.
+_FALLBACK_MODELS = {"claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"}
 DEFAULT_EFFORT = "low"
 
 # Claude downsamples anything larger, and the API rejects images over 5 MB,
@@ -151,13 +154,17 @@ def _ask(image_path: str | os.PathLike, prompt: str, schema: dict) -> dict:
 
     client = anthropic.Anthropic(timeout=90.0, max_retries=2)
     image_b64 = _encode_image(Path(image_path))
+    model = model_name()
+    fallback = (
+        {"betas": ["server-side-fallback-2026-07-01"], "fallbacks": "default"}
+        if model in _FALLBACK_MODELS else {}
+    )
 
     try:
         response = client.beta.messages.create(
-            model=model_name(),
+            model=model,
             max_tokens=16000,
-            betas=["server-side-fallback-2026-07-01"],
-            fallbacks="default",
+            **fallback,
             output_config={
                 "effort": os.environ.get("LEDGER_CLAUDE_EFFORT", DEFAULT_EFFORT),
                 "format": {"type": "json_schema", "schema": schema},
