@@ -4,40 +4,53 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}MSME Ledger Digitisation{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500&family=Inter:wght@400;500;600&display=swap">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
-<body>
+<body class="{% block body_class %}{% endblock %}">
   <header class="site-header">
-    <div class="header-inner">
-      <a class="brand" href="{{ url_for('index') }}">
-        <img class="logo" src="{{ url_for('static', filename='logo.png') }}" alt="Chinhoyi University of Technology logo">
-        <div class="brand-text">
-          <div class="university">Chinhoyi University of Technology</div>
-          <div class="app-name">MSME Ledger Digitisation</div>
-        </div>
-      </a>
-      <nav>
-        <a href="{{ url_for('index') }}">Upload</a>
-        <a href="{{ url_for('export', fmt='csv') }}">Export CSV</a>
-        <a href="{{ url_for('export', fmt='json') }}">Export JSON</a>
-      </nav>
-    </div>
+    <nav class="nav nav-left" aria-label="Primary">
+      <a href="{{ url_for('index') }}">Upload</a>
+      <a href="{{ url_for('index') }}#how-it-works">How it works</a>
+    </nav>
+
+    <a class="brand" href="{{ url_for('index') }}" aria-label="MSME Ledger Digitisation, home">
+      {% include "partials/emblem.svg" %}
+      <span class="wordmark">MSME&nbsp;LEDGER</span>
+    </a>
+
+    <nav class="nav nav-right" aria-label="Exports">
+      <a href="{{ url_for('export', fmt='csv') }}">Export CSV</a>
+      <a href="{{ url_for('export', fmt='json') }}">Export JSON</a>
+      <a class="btn btn-outline" href="{{ url_for('index') }}#upload">Scan a ledger</a>
+    </nav>
   </header>
 
-  <div class="container">
-    {% with messages = get_flashed_messages() %}
-      {% if messages %}
-        <ul class="flashes">
-          {% for message in messages %}
-            <li>{{ message }}</li>
-          {% endfor %}
-        </ul>
-      {% endif %}
-    {% endwith %}
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      <ul class="flashes" role="status">
+        {% for message in messages %}
+          <li>
+            <svg viewBox="-14 -14 28 28" aria-hidden="true"><polygon points="0.0,-14.0 2.3,-2.3 14.0,0.0 2.3,2.3 0.0,14.0 -2.3,2.3 -14.0,0.0 -2.3,-2.3"/></svg>
+            {{ message }}
+          </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+  {% endwith %}
 
-    <main>
-      {% block content %}{% endblock %}
-    </main>
-  </div>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="site-footer">
+    <span class="crest"><img src="{{ url_for('static', filename='logo.png') }}" alt="Chinhoyi University of Technology crest"></span>
+    <p>
+      A Chinhoyi University of Technology BSIT capstone<br>
+      <span>Computer vision-based digitisation of handwritten MSME business records</span>
+    </p>
+  </footer>
 </body>
 </html>

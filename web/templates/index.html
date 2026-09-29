@@ -1,15 +1,54 @@
 {% extends "base.html" %}
-{% block title %}Upload a ledger photo{% endblock %}
+{% block title %}Upload a ledger photo · MSME Ledger Digitisation{% endblock %}
+{% block body_class %}page-home{% endblock %}
 {% block content %}
-  <h2>Upload a ledger photo</h2>
-  <p>
-    Runs preprocessing (deskew / denoise / contrast / binarise), OCR
-    (Tesseract on the cleaned image, EasyOCR on the raw image), then field
-    extraction. You'll get an editable table to correct before saving.
-  </p>
+  <section class="hero">
+    <div class="hero-copy">
+      <h1>Turn handwritten ledgers into clean digital records</h1>
+      <p class="lede">
+        Photograph a sales book, stock sheet or receipt. We straighten and clean
+        the image, read it with two OCR engines, and hand you an editable table
+        to check before anything is saved.
+      </p>
 
-  <form action="{{ url_for('process') }}" method="post" enctype="multipart/form-data" class="upload-form">
-    <input type="file" name="image" accept="image/png,image/jpeg,.tif,.tiff,.bmp,.webp" required>
-    <button type="submit">Process image</button>
-  </form>
+      <form id="upload" action="{{ url_for('process') }}" method="post" enctype="multipart/form-data" class="upload-form">
+        <label class="file-field">
+          <span class="file-label">Ledger photo</span>
+          <input type="file" name="image" accept="image/png,image/jpeg,.tif,.tiff,.bmp,.webp" required>
+        </label>
+        <button type="submit" class="btn btn-solid">Digitise this ledger</button>
+      </form>
+      <p class="hint">PNG, JPEG, TIFF, BMP or WebP. Processing takes a few seconds.</p>
+    </div>
+
+    <div class="hero-visual">
+      {% include "partials/hero-art.svg" %}
+    </div>
+  </section>
+
+  <section id="how-it-works" class="steps" aria-labelledby="steps-heading">
+    <h2 id="steps-heading">How it works</h2>
+    <ol>
+      <li>
+        <span class="step-num">01</span>
+        <h3>Capture</h3>
+        <p>A phone photo of a ledger page, stock sheet or receipt. No scanner needed.</p>
+      </li>
+      <li>
+        <span class="step-num">02</span>
+        <h3>Clean</h3>
+        <p>OpenCV deskews, denoises, lifts faint ink with CLAHE and binarises the page.</p>
+      </li>
+      <li>
+        <span class="step-num">03</span>
+        <h3>Read</h3>
+        <p>Tesseract maps the rows, EasyOCR reads the numbers, and fixed rules fuse the two.</p>
+      </li>
+      <li>
+        <span class="step-num">04</span>
+        <h3>Review</h3>
+        <p>Correct any date, item, quantity, price or total, then save and export to CSV or JSON.</p>
+      </li>
+    </ol>
+  </section>
 {% endblock %}

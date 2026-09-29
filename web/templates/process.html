@@ -1,54 +1,67 @@
 {% extends "base.html" %}
-{% block title %}Review extracted rows{% endblock %}
+{% block title %}Review extracted rows · MSME Ledger Digitisation{% endblock %}
+{% block body_class %}page-review{% endblock %}
 {% block content %}
-  <h2>Review extracted rows</h2>
+  <section class="review">
+    <header class="review-head">
+      <p class="eyebrow"><span class="step-num">04</span> Review</p>
+      <h1>Review extracted rows</h1>
+    </header>
 
-  <div class="review-banner">
-    <img class="thumb" src="{{ url_for('processed_file', filename=processed_filename) }}" alt="Processed thumbnail of {{ source_file }}">
-    <div class="meta">
-      <p>You are editing: <span class="filename">{{ source_file }}</span></p>
-      <p>Rows extracted from: <strong>{{ used_engine }}</strong></p>
+    <div class="review-banner">
+      <span class="thumb-ring">
+        <img class="thumb" src="{{ url_for('uploaded_file', filename=raw_filename) }}" alt="Thumbnail of {{ source_file }}">
+      </span>
+      <div class="meta">
+        <p>You are editing <span class="filename">{{ source_file }}</span></p>
+        <p>Rows extracted by <strong>{{ used_engine }}</strong></p>
+      </div>
     </div>
-  </div>
 
-  <div class="previews">
-    <figure>
-      <figcaption>Raw upload</figcaption>
-      <img src="{{ url_for('uploaded_file', filename=raw_filename) }}" alt="Raw upload">
-    </figure>
-    <figure>
-      <figcaption>Preprocessed</figcaption>
-      <img src="{{ url_for('processed_file', filename=processed_filename) }}" alt="Preprocessed image">
-    </figure>
-  </div>
+    <div class="previews">
+      <figure>
+        <figcaption>Raw upload</figcaption>
+        <img src="{{ url_for('uploaded_file', filename=raw_filename) }}" alt="Raw upload">
+      </figure>
+      <figure>
+        <figcaption>Preprocessed</figcaption>
+        <img src="{{ url_for('processed_file', filename=processed_filename) }}" alt="Preprocessed image">
+      </figure>
+    </div>
 
-  <form action="{{ url_for('save') }}" method="post" class="rows-form">
-    <input type="hidden" name="source_file" value="{{ source_file }}">
-    <input type="hidden" name="num_rows" value="{{ rows|length }}">
+    <form action="{{ url_for('save') }}" method="post" class="rows-form">
+      <input type="hidden" name="source_file" value="{{ source_file }}">
+      <input type="hidden" name="num_rows" value="{{ rows|length }}">
 
-    <table>
-      <thead>
-        <tr>
-          <th>Date</th>
-          <th>Item</th>
-          <th>Qty</th>
-          <th>Price</th>
-          <th>Total</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for row in rows %}
-        <tr>
-          <td><input type="text" name="date_{{ loop.index0 }}" value="{{ row.date }}"></td>
-          <td><input type="text" name="item_{{ loop.index0 }}" value="{{ row.item }}"></td>
-          <td><input type="text" name="qty_{{ loop.index0 }}" value="{{ row.qty }}"></td>
-          <td><input type="text" name="price_{{ loop.index0 }}" value="{{ row.price }}"></td>
-          <td><input type="text" name="total_{{ loop.index0 }}" value="{{ row.total }}"></td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+      <div class="sheet">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Date</th>
+              <th scope="col">Item</th>
+              <th scope="col">Qty</th>
+              <th scope="col">Price</th>
+              <th scope="col">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in rows %}
+            <tr>
+              <td><input type="text" name="date_{{ loop.index0 }}" value="{{ row.date }}" aria-label="Date, row {{ loop.index }}"></td>
+              <td><input type="text" name="item_{{ loop.index0 }}" value="{{ row.item }}" aria-label="Item, row {{ loop.index }}"></td>
+              <td><input type="text" name="qty_{{ loop.index0 }}" value="{{ row.qty }}" aria-label="Quantity, row {{ loop.index }}"></td>
+              <td><input type="text" name="price_{{ loop.index0 }}" value="{{ row.price }}" aria-label="Price, row {{ loop.index }}"></td>
+              <td><input type="text" name="total_{{ loop.index0 }}" value="{{ row.total }}" aria-label="Total, row {{ loop.index }}"></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
 
-    <button type="submit">Save records</button>
-  </form>
+      <div class="actions">
+        <button type="submit" class="btn btn-solid">Save records</button>
+        <a class="btn btn-outline" href="{{ url_for('index') }}#upload">Scan another</a>
+      </div>
+    </form>
+  </section>
 {% endblock %}

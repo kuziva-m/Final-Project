@@ -1,0 +1,131 @@
+<svg class="hero-art" viewBox="0 0 640 640" role="img" aria-labelledby="hero-art-title" xmlns="http://www.w3.org/2000/svg">
+  <title id="hero-art-title">A handwritten ledger book lifting off, orbited by the pipeline stages: capture, clean, read, extract, review and export.</title>
+  <defs>
+    <pattern id="dots-sm" width="7" height="7" patternUnits="userSpaceOnUse">
+      <circle cx="3.5" cy="3.5" r="1.7" fill="#fff"/>
+    </pattern>
+    <pattern id="dots-lg" width="9" height="9" patternUnits="userSpaceOnUse">
+      <circle cx="4.5" cy="4.5" r="2.6" fill="#fff"/>
+    </pattern>
+    <pattern id="dots-node" width="5" height="5" patternUnits="userSpaceOnUse">
+      <circle cx="2.5" cy="2.5" r="1" fill="#fff"/>
+    </pattern>
+    <linearGradient id="cover-fade" gradientUnits="userSpaceOnUse" x1="80" y1="-150" x2="-50" y2="90">
+      <stop offset="0" stop-color="#fff"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.25"/>
+      <stop offset="1" stop-color="#000"/>
+    </linearGradient>
+    <linearGradient id="trail-fade" gradientUnits="userSpaceOnUse" x1="0" y1="108" x2="0" y2="320">
+      <stop offset="0" stop-color="#fff"/>
+      <stop offset="1" stop-color="#000"/>
+    </linearGradient>
+    <mask id="cover-mask" maskContentUnits="userSpaceOnUse">
+      <rect x="-80" y="-150" width="160" height="250" fill="url(#cover-fade)"/>
+    </mask>
+    <mask id="trail-mask" maskContentUnits="userSpaceOnUse">
+      <rect x="-70" y="100" width="140" height="230" fill="url(#trail-fade)"/>
+    </mask>
+    <radialGradient id="node-glow" cx="0.35" cy="0.3" r="0.8">
+      <stop offset="0" stop-color="#fff"/>
+      <stop offset="1" stop-color="#000"/>
+    </radialGradient>
+    <mask id="node-mask" maskContentUnits="objectBoundingBox">
+      <rect width="1" height="1" fill="url(#node-glow)"/>
+    </mask>
+  </defs>
+
+  <!-- Orbit rings -->
+  <g class="orbits" fill="none" stroke="#fff" stroke-opacity="0.38" stroke-width="1.4">
+    <circle cx="330" cy="330" r="240"/>
+    <ellipse cx="330" cy="330" rx="290" ry="138" transform="rotate(-28 330 330)"/>
+    <circle cx="150" cy="500" r="100"/>
+    <circle cx="520" cy="170" r="110"/>
+  </g>
+
+  <!-- Sparkles -->
+  <g fill="none" stroke="#fff" stroke-opacity="0.55" stroke-width="1.3" stroke-linejoin="round">
+    <g transform="translate(150 118) scale(0.85)"><g class="twinkle"><polygon points="0.0,-40.0 2.8,-10.6 20.0,-34.6 7.8,-7.8 34.6,-20.0 10.6,-2.8 40.0,0.0 10.6,2.8 34.6,20.0 7.8,7.8 20.0,34.6 2.8,10.6 0.0,40.0 -2.8,10.6 -20.0,34.6 -7.8,7.8 -34.6,20.0 -10.6,2.8 -40.0,0.0 -10.6,-2.8 -34.6,-20.0 -7.8,-7.8 -20.0,-34.6 -2.8,-10.6"/></g></g>
+    <g transform="translate(575 575) scale(1.15)"><g class="twinkle twinkle-late"><polygon points="0.0,-40.0 2.8,-10.6 20.0,-34.6 7.8,-7.8 34.6,-20.0 10.6,-2.8 40.0,0.0 10.6,2.8 34.6,20.0 7.8,7.8 20.0,34.6 2.8,10.6 0.0,40.0 -2.8,10.6 -20.0,34.6 -7.8,7.8 -34.6,20.0 -10.6,2.8 -40.0,0.0 -10.6,-2.8 -34.6,-20.0 -7.8,-7.8 -20.0,-34.6 -2.8,-10.6"/></g></g>
+    <g transform="translate(372 58) scale(0.45)"><g class="twinkle twinkle-mid"><polygon points="0.0,-40.0 2.8,-10.6 20.0,-34.6 7.8,-7.8 34.6,-20.0 10.6,-2.8 40.0,0.0 10.6,2.8 34.6,20.0 7.8,7.8 20.0,34.6 2.8,10.6 0.0,40.0 -2.8,10.6 -20.0,34.6 -7.8,7.8 -34.6,20.0 -10.6,2.8 -40.0,0.0 -10.6,-2.8 -34.6,-20.0 -7.8,-7.8 -20.0,-34.6 -2.8,-10.6"/></g></g>
+  </g>
+  <g fill="#fff">
+    <polygon transform="translate(255 205)" points="0.0,-14.0 2.3,-2.3 14.0,0.0 2.3,2.3 0.0,14.0 -2.3,2.3 -14.0,0.0 -2.3,-2.3" opacity="0.85"/>
+    <polygon transform="translate(612 300) scale(0.7)" points="0.0,-14.0 2.3,-2.3 14.0,0.0 2.3,2.3 0.0,14.0 -2.3,2.3 -14.0,0.0 -2.3,-2.3" opacity="0.7"/>
+    <polygon transform="translate(40 330) scale(0.8)" points="0.0,-14.0 2.3,-2.3 14.0,0.0 2.3,2.3 0.0,14.0 -2.3,2.3 -14.0,0.0 -2.3,-2.3" opacity="0.7"/>
+  </g>
+  <polygon transform="translate(470 470) scale(0.9)" points="0.0,-14.0 2.3,-2.3 14.0,0.0 2.3,2.3 0.0,14.0 -2.3,2.3 -14.0,0.0 -2.3,-2.3" fill="#E4B85C"/>
+
+  <!-- The ledger, lifting off -->
+  <g class="float">
+    <g transform="translate(330 330) rotate(40) scale(1.1)">
+      <!-- dotted trail -->
+      <polygon points="-58,108 58,108 0,318" fill="url(#dots-lg)" mask="url(#trail-mask)"/>
+      <g font-family="'JetBrains Mono', ui-monospace, monospace" font-size="17" fill="#fff" fill-opacity="0.75">
+        <text x="-86" y="168">7</text><text x="66" y="196">3</text>
+        <text x="-40" y="262">0</text><text x="30" y="292">5</text><text x="-96" y="232">1</text>
+      </g>
+      <!-- bookmark ribbons -->
+      <polygon points="-62,96 -38,96 -38,150 -50,138 -62,150" fill="#0A0C1C"/>
+      <polygon points="28,96 50,96 50,136 39,126 28,136" fill="#0A0C1C"/>
+      <!-- book body -->
+      <rect x="-80" y="-150" width="160" height="250" rx="14" fill="#0A0C1C"/>
+      <rect x="66" y="-138" width="16" height="226" rx="3" fill="#F3EFE6"/>
+      <path d="M71 -134 V84 M75.5 -134 V84 M80 -134 V84" stroke="#0A0C1C" stroke-opacity="0.35" stroke-width="1"/>
+      <rect x="-80" y="-150" width="30" height="250" rx="14" fill="#000"/>
+      <path d="M-80 -108 H-50 M-80 -40 H-50 M-80 28 H-50" stroke="#fff" stroke-opacity="0.8" stroke-width="2.5"/>
+      <!-- halftone highlight on the cover -->
+      <rect x="-80" y="-150" width="160" height="250" rx="14" fill="url(#dots-sm)" mask="url(#cover-mask)"/>
+      <!-- cover label -->
+      <rect x="-26" y="-126" width="82" height="30" fill="#0A0C1C" stroke="#fff" stroke-width="1.8"/>
+      <text x="15" y="-105.5" text-anchor="middle" font-family="'Cormorant Garamond', Georgia, serif" font-size="15" font-weight="700" letter-spacing="3" fill="#fff">LEDGER</text>
+      <!-- scanning lens -->
+      <circle cx="15" cy="-20" r="44" fill="#0A0C1C" stroke="#fff" stroke-width="4"/>
+      <circle cx="15" cy="-20" r="35" fill="none" stroke="#fff" stroke-opacity="0.55" stroke-width="1.4" stroke-dasharray="3 5"/>
+      <text x="15" y="-13" text-anchor="middle" font-family="'Cormorant Garamond', Georgia, serif" font-style="italic" font-size="22" fill="#fff">12.50</text>
+      <line class="scanline" x1="-18" y1="-28" x2="48" y2="-28" stroke="#E4B85C" stroke-width="2.2" stroke-linecap="round"/>
+      <!-- ruled lines -->
+      <path d="M-36 44 H58 M-36 58 H40 M-36 72 H52" stroke="#fff" stroke-opacity="0.5" stroke-width="1.5" stroke-linecap="round"/>
+    </g>
+  </g>
+
+  <!-- Pipeline-stage nodes (the orbiting "portraits") -->
+  <g class="nodes" fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round">
+    <g class="node"><title>Capture: a phone photo of the page</title>
+      <circle cx="122" cy="210" r="52" fill="#0A0C1C" stroke-width="3"/>
+      <circle cx="122" cy="210" r="49" fill="url(#dots-node)" stroke="none" mask="url(#node-mask)" opacity="0.5"/>
+      <g transform="translate(97 185) scale(2.1)" stroke-width="2.3" vector-effect="non-scaling-stroke">
+        <path d="M3 8h3l2-3h8l2 3h3v11H3z" vector-effect="non-scaling-stroke"/><circle cx="12" cy="13" r="3.8" vector-effect="non-scaling-stroke"/>
+      </g>
+    </g>
+    <g class="node"><title>Clean: deskew, denoise, contrast, binarise</title>
+      <circle cx="452" cy="120" r="32" fill="#0A0C1C" stroke-width="3"/>
+      <g transform="translate(436 104) scale(1.35)" stroke-width="2.2">
+        <path d="M4 12a8 8 0 0 1 14-5.3M18 3v4h-4M20 12a8 8 0 0 1-14 5.3M6 21v-4h4" vector-effect="non-scaling-stroke"/>
+      </g>
+    </g>
+    <g class="node"><title>Read: Tesseract and EasyOCR, fused by rules</title>
+      <circle cx="560" cy="72" r="44" fill="#0A0C1C" stroke-width="3"/>
+      <circle cx="560" cy="72" r="41" fill="url(#dots-node)" stroke="none" mask="url(#node-mask)" opacity="0.5"/>
+      <text x="560" y="84" text-anchor="middle" font-family="'Cormorant Garamond', Georgia, serif" font-size="34" font-weight="600" fill="#fff" stroke="none">Aa</text>
+    </g>
+    <g class="node"><title>Extract: date, item, qty, price, total</title>
+      <circle cx="566" cy="372" r="46" fill="#0A0C1C" stroke-width="3"/>
+      <g transform="translate(544 350) scale(1.85)" stroke-width="2.2">
+        <path d="M3 5h18v14H3zM3 10h18M3 14.5h18M9 5v14M15 5v14" vector-effect="non-scaling-stroke"/>
+      </g>
+    </g>
+    <g class="node"><title>Review: correct any field before saving</title>
+      <circle cx="450" cy="540" r="54" fill="#0A0C1C" stroke-width="3"/>
+      <circle cx="450" cy="540" r="51" fill="url(#dots-node)" stroke="none" mask="url(#node-mask)" opacity="0.5"/>
+      <g transform="translate(424 514) scale(2.2)" stroke-width="2.3">
+        <path d="M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4" vector-effect="non-scaling-stroke"/>
+      </g>
+    </g>
+    <g class="node"><title>Export: CSV or JSON</title>
+      <circle cx="58" cy="534" r="32" fill="#0A0C1C" stroke-width="3"/>
+      <g transform="translate(42 518) scale(1.35)" stroke-width="2.2">
+        <path d="M12 3v11M7 9.5l5 5 5-5M4 16v4h16v-4" vector-effect="non-scaling-stroke"/>
+      </g>
+    </g>
+  </g>
+</svg>
