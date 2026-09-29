@@ -16,6 +16,48 @@
       </figure>
     </div>
 
+    {% if tables %}
+    <form action="{{ url_for('save_tables') }}" method="post" class="rows-form">
+      <input type="hidden" name="source_file" value="{{ source_file }}">
+      <input type="hidden" name="engine" value="{{ used_engine }}">
+      <input type="hidden" name="num_tables" value="{{ tables|length }}">
+
+      {% for table in tables %}
+      {% set t = loop.index0 %}
+      <input type="hidden" name="num_cols_{{ t }}" value="{{ table.columns|length }}">
+      <input type="hidden" name="num_rows_{{ t }}" value="{{ table.rows|length }}">
+      <input class="table-title" type="text" name="title_{{ t }}" value="{{ table.title }}" placeholder="Table {{ loop.index }}" aria-label="Title of table {{ loop.index }}">
+
+      <div class="sheet">
+        <table>
+          <thead>
+            <tr>
+              {% for col in table.columns %}
+              <th scope="col"><input type="text" name="col_{{ t }}_{{ loop.index0 }}" value="{{ col }}" aria-label="Heading of column {{ loop.index }}"></th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in table.rows %}
+            {% set r = loop.index0 %}
+            <tr>
+              {% for cell in row %}
+              <td><input type="text" name="cell_{{ t }}_{{ r }}_{{ loop.index0 }}" value="{{ cell }}" aria-label="{{ table.columns[loop.index0] }}, row {{ r + 1 }}"></td>
+              {% endfor %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endfor %}
+
+      <div class="actions">
+        <button type="submit" class="btn btn-solid">Save</button>
+        <a class="btn btn-outline" href="{{ url_for('index') }}#upload">Scan another</a>
+      </div>
+    </form>
+
+    {% else %}
     <form action="{{ url_for('save') }}" method="post" class="rows-form">
       <input type="hidden" name="source_file" value="{{ source_file }}">
       <input type="hidden" name="num_rows" value="{{ rows|length }}">
@@ -50,5 +92,6 @@
         <a class="btn btn-outline" href="{{ url_for('index') }}#upload">Scan another</a>
       </div>
     </form>
+    {% endif %}
   </section>
 {% endblock %}

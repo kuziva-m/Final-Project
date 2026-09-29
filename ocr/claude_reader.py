@@ -2,9 +2,11 @@
 ocr/claude_reader.py -- read a ledger photo with Claude's vision model.
 
 An alternative recognition engine to the Tesseract + EasyOCR fusion in
-ocr/fusion.py. It returns rows in the same {date, item, qty, price, total}
-shape (extraction.fields.FIELDNAMES), so review, storage and export are
-unchanged whichever engine produced the rows.
+ocr/fusion.py, with two readers:
+    read_tables -- every table with the page's own column headings, since
+                   each business formats its records differently
+    read_rows   -- the fixed {date, item, qty, price, total} rows
+                   (extraction.fields.FIELDNAMES) the mobile API expects
 
 Enabled only when ANTHROPIC_API_KEY is set. Optional overrides:
     LEDGER_CLAUDE_MODEL   (default claude-opus-5-5)
@@ -30,7 +32,7 @@ DEFAULT_EFFORT = "low"
 # which full-resolution phone photos can exceed.
 _MAX_EDGE = 1568
 
-_PROMPT = """This photo shows a page from a small business's handwritten records \
+_ROWS_PROMPT = """This photo shows a page from a small business's handwritten records \
 (a sales book, stock sheet or receipt), possibly skewed, faded or partly in Shona \
 or Ndebele.
 
@@ -47,7 +49,7 @@ Copy what is written rather than correcting or calculating it, and put "?" in pl
 of characters you cannot read. Skip heading rows and page or column totals. \
 Return rows in the order they appear."""
 
-_SCHEMA = {
+_ROWS_SCHEMA = {
     "type": "object",
     "properties": {
         "rows": {
@@ -61,6 +63,46 @@ _SCHEMA = {
         }
     },
     "required": ["rows"],
+    "additionalProperties": False,
+}
+
+
+_TABLES_PROMPT = """This photo shows a page from a small business's handwritten records. \
+Businesses keep very different documents (sales books, stock sheets, debtor lists, \
+receipts, cash books), so do not assume a layout: read the structure from the page itself. \
+The writing may be skewed or faded and partly in Shona or Ndebele.
+
+For each table on the page:
+- title: the table's heading as written, or a short description if it has none
+- columns: the column headings exactly as written, left to right. If the page has row \
+headings (labels down the left side, such as item names on a stock sheet), make them \
+the first column. Give any column without a written heading a short descriptive name.
+- rows: every row top to bottom, one cell per column, in the same order as columns.
+
+Copy each cell as written, in its original language and spelling, rather than \
+correcting or calculating it. Where a ditto mark means "same as above", write the value \
+it stands for. Use "" for an empty cell and "?" for characters you cannot read. Keep \
+total and balance rows where they appear on the page. If the page has no table, \
+return its lines as a single one-column table."""
+
+_TABLES_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "tables": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string"},
+                    "columns": {"type": "array", "items": {"type": "string"}},
+                    "rows": {"type": "array", "items": {"type": "array", "items": {"type": "string"}}},
+                },
+                "required": ["title", "columns", "rows"],
+                "additionalProperties": False,
+            },
+        }
+    },
+    "required": ["tables"],
     "additionalProperties": False,
 }
 
@@ -103,8 +145,8 @@ def _final_text(content) -> str:
     return "".join(parts)
 
 
-def read_rows(image_path: str | os.PathLike) -> list[dict]:
-    """Transcribe the ledger in *image_path* into FIELDNAMES rows."""
+def _ask(image_path: str | os.PathLike, prompt: str, schema: dict) -> dict:
+    """Send the photo and *prompt* to Claude; return the JSON answer."""
     import anthropic  # imported lazily so the app runs without the package
 
     client = anthropic.Anthropic(timeout=90.0, max_retries=2)
@@ -118,13 +160,13 @@ def read_rows(image_path: str | os.PathLike) -> list[dict]:
             fallbacks="default",
             output_config={
                 "effort": os.environ.get("LEDGER_CLAUDE_EFFORT", DEFAULT_EFFORT),
-                "format": {"type": "json_schema", "schema": _SCHEMA},
+                "format": {"type": "json_schema", "schema": schema},
             },
             messages=[{
                 "role": "user",
                 "content": [
                     {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": image_b64}},
-                    {"type": "text", "text": _PROMPT},
+                    {"type": "text", "text": prompt},
                 ],
             }],
         )
@@ -147,8 +189,32 @@ def read_rows(image_path: str | os.PathLike) -> list[dict]:
         raise ClaudeReadError("the answer was cut off")
 
     try:
-        rows = json.loads(_final_text(response.content))["rows"]
-    except (json.JSONDecodeError, KeyError, TypeError) as exc:
+        return json.loads(_final_text(response.content))
+    except json.JSONDecodeError as exc:
         raise ClaudeReadError("the answer was not valid JSON") from exc
 
+
+def read_rows(image_path: str | os.PathLike) -> list[dict]:
+    """Transcribe the ledger in *image_path* into FIELDNAMES rows."""
+    rows = _ask(image_path, _ROWS_PROMPT, _ROWS_SCHEMA).get("rows", [])
     return [{field: str(row.get(field, "")).strip() for field in FIELDNAMES} for row in rows]
+
+
+def read_tables(image_path: str | os.PathLike) -> list[dict]:
+    """Transcribe every table on the page using the page's own headings.
+
+    Returns ``[{"title": str, "columns": [str, ...], "rows": [[str, ...], ...]}]``
+    with every row padded or trimmed to the number of columns.
+    """
+    tables = []
+    for table in _ask(image_path, _TABLES_PROMPT, _TABLES_SCHEMA).get("tables", []):
+        columns = [str(c).strip() for c in table.get("columns", [])]
+        if not columns:
+            continue
+        width = len(columns)
+        rows = [
+            ([str(cell).strip() for cell in row] + [""] * width)[:width]
+            for row in table.get("rows", [])
+        ]
+        tables.append({"title": str(table.get("title", "")).strip(), "columns": columns, "rows": rows})
+    return tables

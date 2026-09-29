@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 import os
 import sqlite3
 import sys
@@ -83,7 +84,12 @@ app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret-key-change-in-pr
 
 
 def init_db() -> None:
-    """Create the records table if it does not already exist."""
+    """Create the tables if they do not already exist.
+
+    records -- fixed date/item/qty/price/total rows (OCR fusion, mobile app).
+    scans   -- documents read with their own headings; tables_json holds
+               [{"title", "columns", "rows"}], since columns vary per business.
+    """
     with sqlite3.connect(str(DB_PATH)) as conn:
         conn.execute(
             """
@@ -95,6 +101,17 @@ def init_db() -> None:
                 price       TEXT,
                 total       TEXT,
                 source_file TEXT,
+                created_at  TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS scans (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                source_file TEXT,
+                engine      TEXT,
+                tables_json TEXT NOT NULL,
                 created_at  TEXT NOT NULL
             )
             """
@@ -134,15 +151,17 @@ def _unique_stem(original_filename: str) -> str:
     return f"{timestamp}_{stem}"
 
 
-def _run_pipeline_on_upload(upload) -> tuple[dict | None, str | None]:
-    """Save *upload*, run preprocess + fusion, and return the result.
+def _run_pipeline_on_upload(upload, detect_tables: bool = False) -> tuple[dict | None, str | None]:
+    """Save *upload*, run preprocess + recognition, and return the result.
 
     Shared by the HTML /process route and the JSON /api/scan route so both
     surfaces run the exact same pipeline. Returns ``(artifacts, None)`` on
     success or ``(None, error_message)`` on a validation/decode failure.
 
-    ``artifacts`` keys: rows, provenance, used_engine, source_file,
-    raw_filename, processed_filename.
+    ``artifacts`` keys: used_engine, source_file, raw_filename,
+    processed_filename, plus either ``tables`` (when *detect_tables* and
+    Claude read the page with its own headings) or ``rows`` + ``provenance``
+    (fixed FIELDNAMES rows).
     """
     if upload is None or upload.filename == "":
         return None, "No file selected. Choose an image and try again."
@@ -165,13 +184,25 @@ def _run_pipeline_on_upload(upload) -> tuple[dict | None, str | None]:
     processed_path = PROCESSED_DIR / processed_filename
     preprocess(img, save_path=processed_path)
 
+    files = {
+        "source_file": raw_filename,
+        "raw_filename": raw_filename,
+        "processed_filename": processed_filename,
+    }
+
     rows = None
     fallback_note = ""
     if claude_reader.is_enabled():
+        claude_engine = f"Claude vision ({claude_reader.model_name()})"
         try:
+            if detect_tables:
+                tables = claude_reader.read_tables(raw_path)
+                if not tables:
+                    tables = [{"title": "", "columns": ["Column 1", "Column 2", "Column 3"], "rows": [["", "", ""]]}]
+                return {**files, "tables": tables, "used_engine": claude_engine}, None
             rows = claude_reader.read_rows(raw_path)
             provenance = [{} for _ in rows]
-            used_engine = f"Claude vision ({claude_reader.model_name()})"
+            used_engine = claude_engine
         except claude_reader.ClaudeReadError as exc:
             app.logger.warning("Claude read failed, falling back to OCR fusion: %s", exc)
             fallback_note = f" -- Claude unavailable: {exc}"
@@ -190,14 +221,7 @@ def _run_pipeline_on_upload(upload) -> tuple[dict | None, str | None]:
         provenance = [{}]
         used_engine = "none (manual entry)"
 
-    return {
-        "rows": rows,
-        "provenance": provenance,
-        "used_engine": used_engine,
-        "source_file": raw_filename,
-        "raw_filename": raw_filename,
-        "processed_filename": processed_filename,
-    }, None
+    return {**files, "rows": rows, "provenance": provenance, "used_engine": used_engine}, None
 
 
 def _save_rows(source_file: str, rows: list[dict]) -> int:
@@ -234,15 +258,16 @@ def index():
 
 @app.route("/process", methods=["POST"])
 def process():
-    """Save the upload, run the pipeline, and show an editable rows table."""
-    artifacts, error = _run_pipeline_on_upload(request.files.get("image"))
+    """Save the upload, run the pipeline, and show the editable table(s)."""
+    artifacts, error = _run_pipeline_on_upload(request.files.get("image"), detect_tables=True)
     if error:
         flash(error)
         return redirect(url_for("index"))
 
     return render_template(
         "process.html",
-        rows=artifacts["rows"],
+        tables=artifacts.get("tables"),
+        rows=artifacts.get("rows"),
         source_file=artifacts["source_file"],
         raw_filename=artifacts["raw_filename"],
         processed_filename=artifacts["processed_filename"],
@@ -266,6 +291,57 @@ def save():
     saved = _save_rows(source_file, rows)
 
     flash(f"Saved {saved} record(s) from {source_file or 'upload'}.")
+    return redirect(url_for("index"))
+
+
+# Bounds on the dynamic review form, so a crafted POST can't make the server
+# loop over millions of fields.
+_MAX_TABLES, _MAX_COLS, _MAX_ROWS = 20, 50, 1000
+
+
+def _form_int(name: str, upper: int) -> int:
+    try:
+        return max(0, min(int(request.form.get(name, "0")), upper))
+    except ValueError:
+        return 0
+
+
+@app.route("/save-tables", methods=["POST"])
+def save_tables():
+    """Persist tables read with the page's own headings into the scans table."""
+    source_file = request.form.get("source_file", "").strip()
+    engine = request.form.get("engine", "").strip()
+
+    tables = []
+    for t in range(_form_int("num_tables", _MAX_TABLES)):
+        n_cols = _form_int(f"num_cols_{t}", _MAX_COLS)
+        n_rows = _form_int(f"num_rows_{t}", _MAX_ROWS)
+        columns = [request.form.get(f"col_{t}_{c}", "").strip() for c in range(n_cols)]
+        rows = []
+        for r in range(n_rows):
+            row = [request.form.get(f"cell_{t}_{r}_{c}", "").strip() for c in range(n_cols)]
+            if any(row):
+                rows.append(row)
+        if rows:
+            tables.append({
+                "title": request.form.get(f"title_{t}", "").strip(),
+                "columns": [col or f"Column {i + 1}" for i, col in enumerate(columns)],
+                "rows": rows,
+            })
+
+    if not tables:
+        flash("Nothing to save: every row was empty.")
+        return redirect(url_for("index"))
+
+    db = get_db()
+    db.execute(
+        "INSERT INTO scans (source_file, engine, tables_json, created_at) VALUES (?, ?, ?, ?)",
+        (source_file, engine, json.dumps(tables, ensure_ascii=False), datetime.now(timezone.utc).isoformat()),
+    )
+    db.commit()
+
+    n_rows = sum(len(t["rows"]) for t in tables)
+    flash(f"Saved {n_rows} row(s) in {len(tables)} table(s) from {source_file or 'upload'}.")
     return redirect(url_for("index"))
 
 
@@ -314,9 +390,14 @@ def api_save():
 
 @app.route("/export/<fmt>")
 def export(fmt: str):
-    """Download all saved records as CSV or JSON.
+    """Download everything saved as CSV or JSON.
 
-    The download is named after the source image when every exported record
+    Covers both the fixed-field records and the scans saved with their own
+    headings. CSV lists the records first, then each scanned table as its own
+    block (a label line, its header row, its rows). JSON is
+    {"records": [...], "scans": [...]}.
+
+    The download is named after the source image when everything exported
     came from the same upload; a flash confirms exactly what was exported
     (visible on the next page view, since a file download doesn't navigate
     the browser away from the current page).
@@ -328,8 +409,18 @@ def export(fmt: str):
     db = get_db()
     columns = ["id", "date", "item", "qty", "price", "total", "source_file", "created_at"]
     records = [dict(row) for row in db.execute(f"SELECT {', '.join(columns)} FROM records ORDER BY id")]
+    scans = [
+        {
+            "id": row["id"],
+            "source_file": row["source_file"],
+            "engine": row["engine"],
+            "created_at": row["created_at"],
+            "tables": json.loads(row["tables_json"]),
+        }
+        for row in db.execute("SELECT id, source_file, engine, tables_json, created_at FROM scans ORDER BY id")
+    ]
 
-    sources = {r["source_file"] for r in records if r["source_file"]}
+    sources = {r["source_file"] for r in records + scans if r["source_file"]}
     if len(sources) == 1:
         export_stem = Path(next(iter(sources))).stem
     elif sources:
@@ -338,26 +429,34 @@ def export(fmt: str):
         export_stem = "records"
     download_name = f"{export_stem}.{fmt}"
 
-    confirmation = f"Exported {len(records)} record(s) as {download_name}"
+    n_rows = len(records) + sum(len(t["rows"]) for s in scans for t in s["tables"])
+    confirmation = f"Exported {n_rows} row(s) as {download_name}"
     if len(sources) == 1:
         confirmation += f" (source: {next(iter(sources))})"
     flash(confirmation + ".")
 
     if fmt == "csv":
         buf = io.StringIO()
-        writer = csv.DictWriter(buf, fieldnames=columns)
-        writer.writeheader()
-        writer.writerows(records)
+        writer = csv.writer(buf)
+        if records or not scans:
+            writer.writerow(columns)
+            writer.writerows([r[c] for c in columns] for r in records)
+        for scan in scans:
+            for table in scan["tables"]:
+                if buf.tell():
+                    writer.writerow([])
+                label = scan["source_file"] or f"scan {scan['id']}"
+                writer.writerow([f"{label} - {table['title']}" if table["title"] else label])
+                writer.writerow(table["columns"])
+                writer.writerows(table["rows"])
         return Response(
             buf.getvalue(),
             mimetype="text/csv",
             headers={"Content-Disposition": f"attachment; filename={download_name}"},
         )
 
-    import json
-
     return Response(
-        json.dumps(records, indent=2, ensure_ascii=False),
+        json.dumps({"records": records, "scans": scans}, indent=2, ensure_ascii=False),
         mimetype="application/json",
         headers={"Content-Disposition": f"attachment; filename={download_name}"},
     )
