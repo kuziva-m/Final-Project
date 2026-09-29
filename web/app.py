@@ -14,6 +14,10 @@ skeleton (date, item, column layout); EasyOCR supplies clean numeric values
 where the two disagree, and every decision is logged (provenance) so the
 result is auditable -- no model, only rules.
 
+When ANTHROPIC_API_KEY is set, ocr/claude_reader.py reads the photo instead
+and returns rows in the same shape; if that call fails, the fusion above is
+used. The engine that produced the rows is always reported as used_engine.
+
 Run:
     python -m web.app
     (or) python web/app.py
@@ -51,6 +55,7 @@ from flask import (
 from werkzeug.utils import secure_filename
 
 from extraction.fields import FIELDNAMES
+from ocr import claude_reader
 from ocr.fusion import fuse_from_texts, run_engines
 from preprocessing.clean import preprocess
 
@@ -160,12 +165,24 @@ def _run_pipeline_on_upload(upload) -> tuple[dict | None, str | None]:
     processed_path = PROCESSED_DIR / processed_filename
     preprocess(img, save_path=processed_path)
 
-    # Tesseract-on-cleaned (row structure) + EasyOCR-on-raw (clean values),
-    # each engine called once, then fused with provenance -- which engine
-    # won each field -- so the review UI can show what fusion auto-corrected.
-    tesseract_text, easyocr_text = run_engines(raw_path, processed_path=processed_path)
-    rows, provenance = fuse_from_texts(tesseract_text, easyocr_text, return_provenance=True)
-    used_engine = "fused (tesseract + easyocr)"
+    rows = None
+    fallback_note = ""
+    if claude_reader.is_enabled():
+        try:
+            rows = claude_reader.read_rows(raw_path)
+            provenance = [{} for _ in rows]
+            used_engine = f"Claude vision ({claude_reader.model_name()})"
+        except claude_reader.ClaudeReadError as exc:
+            app.logger.warning("Claude read failed, falling back to OCR fusion: %s", exc)
+            fallback_note = f" -- Claude unavailable: {exc}"
+
+    if rows is None:
+        # Tesseract-on-cleaned (row structure) + EasyOCR-on-raw (clean values),
+        # each engine called once, then fused with provenance -- which engine
+        # won each field -- so the review UI can show what fusion auto-corrected.
+        tesseract_text, easyocr_text = run_engines(raw_path, processed_path=processed_path)
+        rows, provenance = fuse_from_texts(tesseract_text, easyocr_text, return_provenance=True)
+        used_engine = "fused (tesseract + easyocr)" + fallback_note
 
     if not rows:
         # Never dead-end the owner with nothing to correct -- give one blank row.
