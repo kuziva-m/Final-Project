@@ -1,6 +1,5 @@
 /* Royal-blue editorial theme: serif display type on a saturated blue canvas,
-   thin white orbit lines, halftone illustration, navy solid + white outline
-   buttons. CUT gold is kept as the single small accent. */
+   the CUT emblem in white line art, navy solid + white outline buttons. */
 
 :root {
   --blue: #3150D9;
@@ -22,8 +21,6 @@
 
 * { box-sizing: border-box; }
 
-html { scroll-behavior: smooth; }
-
 body {
   margin: 0;
   min-height: 100vh;
@@ -36,7 +33,11 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-main { flex: 1; }
+main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
 
 ::selection { background: var(--gold); color: var(--ink); }
 
@@ -120,7 +121,7 @@ input:focus-visible {
   cursor: pointer;
   border: 1.5px solid transparent;
   border-radius: 0;
-  transition: background-color 0.18s ease, color 0.18s ease, transform 0.18s ease;
+  transition: background-color 0.18s ease, color 0.18s ease;
 }
 
 .btn-outline {
@@ -143,7 +144,6 @@ input:focus-visible {
 .btn-solid:hover {
   background: var(--ink);
   border-color: var(--ink);
-  transform: translateY(-1px);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -157,74 +157,50 @@ input:focus-visible {
 }
 
 .flashes li {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
   padding: 0.85rem 1.1rem;
   border: 1px solid rgba(255, 255, 255, 0.6);
-  font-size: 0.98rem;
+  border-left: 3px solid var(--gold);
 }
 
 .flashes li + li { margin-top: 0.5rem; }
 
-.flashes svg {
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-  fill: var(--gold);
-}
-
 /* ---------------------------------------------------------------------- */
-/* Home hero                                                                */
+/* Home                                                                     */
 /* ---------------------------------------------------------------------- */
 
 .hero {
+  flex: 1;
   display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
   align-items: center;
   gap: 3rem;
-  padding: 2rem var(--edge) 5rem;
+  padding: 2rem var(--edge) 4rem;
 }
 
 .hero h1 {
   font-family: var(--serif);
   font-weight: 600;
-  font-size: clamp(3rem, 6.2vw, 6.4rem);
+  font-size: clamp(3rem, 6.6vw, 6.8rem);
   line-height: 0.98;
   letter-spacing: -0.01em;
-  margin: 0 0 2rem;
+  margin: 0 0 1.25rem;
 }
 
 .lede {
   font-family: var(--serif);
   font-weight: 500;
-  font-size: clamp(1.35rem, 2vw, 1.9rem);
+  font-size: clamp(1.4rem, 2.2vw, 2rem);
   line-height: 1.25;
-  max-width: 34ch;
+  color: var(--muted);
   margin: 0;
 }
 
 .upload-form {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
+  align-items: center;
   gap: 1rem;
   margin-top: 2.75rem;
-}
-
-.file-field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  min-width: 0;
-}
-
-.file-label {
-  font-size: 0.74rem;
-  font-weight: 600;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--muted);
 }
 
 input[type="file"] {
@@ -253,108 +229,16 @@ input[type="file"]::file-selector-button:hover {
   color: var(--blue);
 }
 
-.hint {
-  margin: 1rem 0 0;
-  font-size: 0.86rem;
-  color: var(--muted);
+.hero-emblem {
+  justify-self: center;
 }
 
-.hero-visual svg {
-  display: block;
-  width: 100%;
-  max-width: 680px;
+.hero-emblem .emblem {
+  width: clamp(240px, 30vw, 440px);
   height: auto;
-  margin-left: auto;
-  overflow: visible;
 }
 
-/* Motion: gentle, and off for anyone who prefers reduced motion. */
-
-.float { animation: float 7s ease-in-out infinite; }
-
-.twinkle {
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: twinkle 5s ease-in-out infinite;
-}
-
-.twinkle-mid { animation-delay: -1.6s; }
-.twinkle-late { animation-delay: -3.2s; }
-
-.scanline { animation: scan 3.2s ease-in-out infinite; }
-
-@keyframes float {
-  0%, 100% { transform: translate(0, 0); }
-  50% { transform: translate(6px, -12px); }
-}
-
-@keyframes twinkle {
-  0%, 100% { opacity: 1; transform: scale(1) rotate(0deg); }
-  50% { opacity: 0.4; transform: scale(0.82) rotate(14deg); }
-}
-
-@keyframes scan {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(24px); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  html { scroll-behavior: auto; }
-  .float, .twinkle, .scanline { animation: none; }
-}
-
-/* ---------------------------------------------------------------------- */
-/* How it works                                                            */
-/* ---------------------------------------------------------------------- */
-
-.steps {
-  padding: 4.5rem var(--edge) 5.5rem;
-  border-top: 1px solid var(--line);
-}
-
-.steps h2 {
-  font-family: var(--serif);
-  font-weight: 600;
-  font-size: clamp(2.2rem, 3.6vw, 3.4rem);
-  line-height: 1;
-  margin: 0 0 2.75rem;
-}
-
-.steps ol {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 2.5rem;
-}
-
-.steps li {
-  padding-top: 1.4rem;
-  border-top: 1px solid var(--line);
-}
-
-.step-num {
-  display: block;
-  font-family: var(--serif);
-  font-style: italic;
-  font-weight: 500;
-  font-size: 3rem;
-  line-height: 1;
-  color: var(--gold);
-}
-
-.steps h3 {
-  font-family: var(--serif);
-  font-weight: 600;
-  font-size: 1.9rem;
-  margin: 0.7rem 0 0.5rem;
-}
-
-.steps p {
-  margin: 0;
-  color: var(--muted);
-}
+.hero-emblem .emblem [stroke] { stroke-width: 1.4; }
 
 /* ---------------------------------------------------------------------- */
 /* Review page                                                              */
@@ -364,64 +248,21 @@ input[type="file"]::file-selector-button:hover {
   padding: 1.5rem var(--edge) 5rem;
 }
 
-.eyebrow {
-  display: flex;
-  align-items: baseline;
-  gap: 0.7rem;
-  margin: 0;
-  font-size: 0.8rem;
-  font-weight: 600;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-.eyebrow .step-num {
-  display: inline;
-  font-size: 1.6rem;
-  letter-spacing: 0;
-  text-transform: none;
-}
-
 .review h1 {
   font-family: var(--serif);
   font-weight: 600;
   font-size: clamp(2.6rem, 5vw, 4.6rem);
   line-height: 1;
-  margin: 0.5rem 0 2rem;
+  margin: 0 0 0.75rem;
 }
 
-.review-banner {
-  display: inline-flex;
-  align-items: center;
-  gap: 1.25rem;
-  padding: 1rem 1.5rem 1rem 1rem;
-  margin-bottom: 2.25rem;
-  border: 1px solid var(--line);
-  max-width: 100%;
+.meta {
+  margin: 0 0 2.25rem;
+  color: var(--muted);
 }
 
-.thumb-ring {
-  width: 84px;
-  height: 84px;
-  flex-shrink: 0;
-  border-radius: 50%;
-  border: 3px solid var(--white);
-  overflow: hidden;
-  background: var(--white);
-}
-
-.thumb-ring .thumb {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  transform: scale(1.12);
-}
-
-.review-banner .meta p { margin: 0.15rem 0; }
-
-.review-banner .filename {
+.meta .filename {
+  color: var(--white);
   font-weight: 600;
   word-break: break-all;
 }
@@ -518,22 +359,20 @@ td input[type="text"]:focus {
 .site-footer {
   display: flex;
   align-items: center;
-  gap: 1.1rem;
-  padding: 1.75rem var(--edge);
+  gap: 1rem;
+  padding: 1.5rem var(--edge);
   border-top: 1px solid var(--line);
   font-size: 0.92rem;
 }
 
 .site-footer p { margin: 0; }
 
-.site-footer p span { color: var(--muted); }
-
 .crest {
-  width: 58px;
-  height: 58px;
+  width: 48px;
+  height: 48px;
   flex-shrink: 0;
   border-radius: 50%;
-  border: 3px solid var(--white);
+  border: 2px solid var(--white);
   overflow: hidden;
   background: var(--white);
 }
@@ -549,23 +388,22 @@ td input[type="text"]:focus {
 /* Smaller screens                                                          */
 /* ---------------------------------------------------------------------- */
 
-@media (max-width: 1000px) {
+@media (max-width: 900px) {
   .site-header {
     grid-template-columns: 1fr;
     justify-items: center;
-    gap: 1.1rem;
+    gap: 1rem;
   }
   .brand { order: -1; }
   .nav-left, .nav-right { justify-self: center; justify-content: center; }
 
-  .hero { grid-template-columns: 1fr; padding-bottom: 3.5rem; }
-  .hero-visual svg { max-width: 520px; margin: 0 auto; }
-
-  .steps ol { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hero { grid-template-columns: 1fr; text-align: center; }
+  .hero-emblem { order: -1; }
+  .hero-emblem .emblem { width: 180px; }
+  .upload-form { justify-content: center; }
 }
 
 @media (max-width: 600px) {
-  .steps ol,
   .previews { grid-template-columns: 1fr; }
   .upload-form .btn { width: 100%; }
   .sheet { box-shadow: 6px 6px 0 var(--navy); }

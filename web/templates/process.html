@@ -1,30 +1,17 @@
 {% extends "base.html" %}
-{% block title %}Review extracted rows · MSME Ledger Digitisation{% endblock %}
-{% block body_class %}page-review{% endblock %}
+{% block title %}Review · MSME Ledger Digitisation{% endblock %}
 {% block content %}
   <section class="review">
-    <header class="review-head">
-      <p class="eyebrow"><span class="step-num">04</span> Review</p>
-      <h1>Review extracted rows</h1>
-    </header>
-
-    <div class="review-banner">
-      <span class="thumb-ring">
-        <img class="thumb" src="{{ url_for('uploaded_file', filename=raw_filename) }}" alt="Thumbnail of {{ source_file }}">
-      </span>
-      <div class="meta">
-        <p>You are editing <span class="filename">{{ source_file }}</span></p>
-        <p>Rows extracted by <strong>{{ used_engine }}</strong></p>
-      </div>
-    </div>
+    <h1>Review</h1>
+    <p class="meta"><span class="filename">{{ source_file }}</span> · {{ used_engine }}</p>
 
     <div class="previews">
       <figure>
-        <figcaption>Raw upload</figcaption>
+        <figcaption>Raw</figcaption>
         <img src="{{ url_for('uploaded_file', filename=raw_filename) }}" alt="Raw upload">
       </figure>
       <figure>
-        <figcaption>Preprocessed</figcaption>
+        <figcaption>Cleaned</figcaption>
         <img src="{{ url_for('processed_file', filename=processed_filename) }}" alt="Preprocessed image">
       </figure>
     </div>
@@ -59,7 +46,7 @@
       </div>
 
       <div class="actions">
-        <button type="submit" class="btn btn-solid">Save records</button>
+        <button type="submit" class="btn btn-solid">Save</button>
         <a class="btn btn-outline" href="{{ url_for('index') }}#upload">Scan another</a>
       </div>
     </form>
