@@ -170,6 +170,7 @@ input:focus-visible {
 
 .hero {
   flex: 1;
+  min-height: min(760px, calc(100vh - 110px));
   display: grid;
   grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
   align-items: center;
@@ -239,6 +240,57 @@ input[type="file"]::file-selector-button:hover {
 }
 
 .hero-emblem .emblem [stroke] { stroke-width: 1.4; }
+
+/* Instructions under the hero */
+
+.howto {
+  padding: 3.5rem var(--edge) 4.5rem;
+  border-top: 1px solid var(--line);
+}
+
+.howto h2 {
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: clamp(2rem, 3.2vw, 3rem);
+  line-height: 1;
+  margin: 0 0 2.25rem;
+}
+
+.howto ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 2.5rem;
+}
+
+.howto li {
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--line);
+}
+
+.step-num {
+  display: block;
+  font-family: var(--serif);
+  font-style: italic;
+  font-weight: 500;
+  font-size: 2.6rem;
+  line-height: 1;
+  color: var(--gold);
+}
+
+.howto h3 {
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 1.75rem;
+  margin: 0.6rem 0 0.35rem;
+}
+
+.howto p {
+  margin: 0;
+  color: var(--muted);
+}
 
 /* ---------------------------------------------------------------------- */
 /* Review page                                                              */
@@ -401,10 +453,13 @@ td input[type="text"]:focus {
   .hero-emblem { order: -1; }
   .hero-emblem .emblem { width: 180px; }
   .upload-form { justify-content: center; }
+
+  .howto ol { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 600px) {
-  .previews { grid-template-columns: 1fr; }
+  .previews,
+  .howto ol { grid-template-columns: 1fr; }
   .upload-form .btn { width: 100%; }
   .sheet { box-shadow: 6px 6px 0 var(--navy); }
 }
