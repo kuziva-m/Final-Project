@@ -7,8 +7,6 @@
 // Technology blue/gold, flat institutional style — no gradients, no
 // glassmorphism, no rounded "card" boxes, no drop shadows.
 //
-// BEFORE BUILDING: replace kApiBase below with your deployed Space URL.
-
 import 'dart:convert';
 import 'dart:io';
 
@@ -16,8 +14,8 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 
-// ─── Change this to your deployed API URL after pushing to Hugging Face Spaces. ───
-const String kApiBase = 'https://YOUR-USERNAME-YOUR-SPACE.hf.space';
+// ─── Deployed Hugging Face Space backing this app. ─────────────────────────────────
+const String kApiBase = 'https://kmawoyo-msme-digitization.hf.space';
 // ─────────────────────────────────────────────────────────────────────────────────
 
 // ─── Chinhoyi University of Technology palette (matches web/static/style.css) ─────
