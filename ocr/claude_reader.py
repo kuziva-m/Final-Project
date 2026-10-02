@@ -9,7 +9,7 @@ ocr/fusion.py, with two readers:
                    (extraction.fields.FIELDNAMES) the mobile API expects
 
 Enabled only when ANTHROPIC_API_KEY is set. Optional overrides:
-    LEDGER_CLAUDE_MODEL   (default claude-sonnet-5)
+    LEDGER_CLAUDE_MODEL   (default claude-sonnet-5-5)
     LEDGER_CLAUDE_EFFORT  (default low -- transcription needs little reasoning, and
                           a live demo needs a fast answer)
 """
@@ -25,16 +25,14 @@ from pathlib import Path
 import cv2
 
 from extraction.fields import FIELDNAMES
+from extraction.tidy import tidy_rows
+from preprocessing.vision_prep import prepare_for_vision
 
-DEFAULT_MODEL = "claude-sonnet-5"
+DEFAULT_MODEL = "claude-sonnet-5-5"
 # Models documented to accept server-side refusal fallback ("default" mode);
 # other models get the plain request.
 _FALLBACK_MODELS = {"claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"}
 DEFAULT_EFFORT = "low"
-
-# Claude downsamples anything larger, and the API rejects images over 5 MB,
-# which full-resolution phone photos can exceed.
-_MAX_EDGE = 1568
 
 _ROWS_PROMPT = """This photo shows a page from a small business's handwritten records \
 (a sales book, stock sheet or receipt), possibly skewed, faded or partly in Shona \
@@ -52,6 +50,17 @@ closest field by its content. Use "" for a field the page doesn't have for that 
 Copy what is written rather than correcting or calculating it, and put "?" in place \
 of characters you cannot read. Skip heading rows and page or column totals. \
 Return rows in the order they appear."""
+
+_READING_RULES = """
+
+Reading rules:
+- Read digits as digits: 0 (zero), not the letter O; 1, not l or I.
+- Keep each value in its own column; never join two columns' values into one cell.
+- When the same name or item repeats on the page, spell it the same way each time.
+- If a cell holds only a ditto mark (such as " or 〃 or ^ or "do"), write just " -- \
+it is filled in automatically."""
+
+_ROWS_PROMPT += _READING_RULES
 
 _ROWS_SCHEMA = {
     "type": "object",
@@ -84,10 +93,11 @@ the first column. Give any column without a written heading a short descriptive 
 - rows: every row top to bottom, one cell per column, in the same order as columns.
 
 Copy each cell as written, in its original language and spelling, rather than \
-correcting or calculating it. Where a ditto mark means "same as above", write the value \
-it stands for. Use "" for an empty cell and "?" for characters you cannot read. Keep \
+correcting or calculating it. Use "" for an empty cell and "?" for characters you cannot read. Keep \
 total and balance rows where they appear on the page. If the page has no table, \
 return its lines as a single one-column table."""
+
+_TABLES_PROMPT += _READING_RULES
 
 _TABLES_SCHEMA = {
     "type": "object",
@@ -127,10 +137,9 @@ def _encode_image(image_path: Path) -> str:
     img = cv2.imread(str(image_path), cv2.IMREAD_COLOR)
     if img is None:
         raise ClaudeReadError(f"Could not read image {image_path.name}.")
-    h, w = img.shape[:2]
-    scale = _MAX_EDGE / max(h, w)
-    if scale < 1:
-        img = cv2.resize(img, (round(w * scale), round(h * scale)), interpolation=cv2.INTER_AREA)
+    # Crops to the writing and fits a fixed pixel budget, which also keeps the
+    # upload far below the API's 5 MB image limit.
+    img = prepare_for_vision(img)
     ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 90])
     if not ok:
         raise ClaudeReadError("Could not encode image for upload.")
@@ -207,7 +216,8 @@ def _ask(image_path: str | os.PathLike, prompt: str, schema: dict) -> dict:
 def read_rows(image_path: str | os.PathLike) -> list[dict]:
     """Transcribe the ledger in *image_path* into FIELDNAMES rows."""
     rows = _ask(image_path, _ROWS_PROMPT, _ROWS_SCHEMA).get("rows", [])
-    return [{field: str(row.get(field, "")).strip() for field in FIELDNAMES} for row in rows]
+    cells = tidy_rows([[str(row.get(field, "")).strip() for field in FIELDNAMES] for row in rows])
+    return [dict(zip(FIELDNAMES, row)) for row in cells]
 
 
 def read_tables(image_path: str | os.PathLike) -> list[dict]:
@@ -222,10 +232,10 @@ def read_tables(image_path: str | os.PathLike) -> list[dict]:
         if not columns:
             continue
         width = len(columns)
-        rows = [
+        rows = tidy_rows([
             ([str(cell).strip() for cell in row] + [""] * width)[:width]
             for row in table.get("rows", [])
-        ]
+        ])
         tables.append({"title": str(table.get("title", "")).strip(), "columns": columns, "rows": rows})
     return tables
 
