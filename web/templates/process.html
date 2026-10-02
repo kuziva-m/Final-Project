@@ -3,15 +3,15 @@
 {% block content %}
   <section class="review">
     <h1>Review</h1>
-    <p class="meta"><span class="filename">{{ source_file }}</span> · {{ used_engine }}</p>
+    <p class="meta"><span class="filename">{{ source_file }}</span>{% if pages_note %} · {{ pages_note }}{% endif %} · {{ used_engine }}</p>
 
     <div class="previews">
       <figure>
-        <figcaption>Raw</figcaption>
+        <figcaption>Raw{% if pages_note %} · page 1{% endif %}</figcaption>
         <img src="{{ url_for('uploaded_file', filename=raw_filename) }}" alt="Raw upload">
       </figure>
       <figure>
-        <figcaption>Cleaned</figcaption>
+        <figcaption>Cleaned{% if pages_note %} · page 1{% endif %}</figcaption>
         <img src="{{ url_for('processed_file', filename=processed_filename) }}" alt="Preprocessed image">
       </figure>
     </div>

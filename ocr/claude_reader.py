@@ -19,6 +19,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import cv2
@@ -152,7 +153,9 @@ def _ask(image_path: str | os.PathLike, prompt: str, schema: dict) -> dict:
     """Send the photo and *prompt* to Claude; return the JSON answer."""
     import anthropic  # imported lazily so the app runs without the package
 
-    client = anthropic.Anthropic(timeout=90.0, max_retries=2)
+    # Extra retries: parallel page reads can briefly hit rate limits, and the
+    # SDK backs off and retries those automatically.
+    client = anthropic.Anthropic(timeout=90.0, max_retries=4)
     image_b64 = _encode_image(Path(image_path))
     model = model_name()
     fallback = (
@@ -225,3 +228,89 @@ def read_tables(image_path: str | os.PathLike) -> list[dict]:
         ]
         tables.append({"title": str(table.get("title", "")).strip(), "columns": columns, "rows": rows})
     return tables
+
+
+# ---------------------------------------------------------------------------
+# Multi-page documents (PDF scans): one request per page, a few at a time.
+# ---------------------------------------------------------------------------
+
+
+def _workers() -> int:
+    try:
+        return max(1, int(os.environ.get("LEDGER_PDF_WORKERS", "3")))
+    except ValueError:
+        return 3
+
+
+def _try(read, image_path):
+    try:
+        return read(image_path)
+    except ClaudeReadError as exc:
+        return exc
+
+
+def read_rows_from_pages(image_paths: list[Path]) -> list[dict]:
+    """FIELDNAMES rows from every page, in page order. Any failed page raises,
+    so the caller can fall back for the whole document."""
+    with ThreadPoolExecutor(max_workers=_workers()) as pool:
+        results = list(pool.map(lambda p: _try(read_rows, p), image_paths))
+    for result in results:
+        if isinstance(result, ClaudeReadError):
+            raise result
+    return [row for page_rows in results for row in page_rows]
+
+
+def _same_headings(a: list[str], b: list[str]) -> bool:
+    return [c.strip().lower() for c in a] == [c.strip().lower() for c in b]
+
+
+def merge_continued_tables(page_tables: list[dict], multi_page: bool) -> list[dict]:
+    """Join a table that carries on from the end of one page onto the next.
+
+    *page_tables* is in page order, each with a ``page`` number. A table is
+    joined to the one before it when it starts the very next page, has the
+    same headings, and its title is blank or the same. On multi-page
+    documents each title is labelled with the page(s) it came from.
+    """
+    merged: list[dict] = []
+    for table in page_tables:
+        prev = merged[-1] if merged else None
+        if (
+            prev is not None
+            and table["page"] == prev["pages"][-1] + 1
+            and _same_headings(prev["columns"], table["columns"])
+            and table["title"].strip().lower() in ("", prev["title"].strip().lower())
+        ):
+            prev["rows"].extend(table["rows"])
+            prev["pages"].append(table["page"])
+            continue
+        merged.append({"title": table["title"], "columns": table["columns"],
+                       "rows": list(table["rows"]), "pages": [table["page"]]})
+
+    for table in merged:
+        pages = table.pop("pages")
+        if multi_page:
+            label = f"page {pages[0]}" if len(pages) == 1 else f"pages {pages[0]}\u2013{pages[-1]}"
+            table["title"] = f"{table['title']} ({label})" if table["title"] else label.capitalize()
+    return merged
+
+
+def read_tables_from_pages(image_paths: list[Path]) -> list[dict]:
+    """Tables from every page, with continued tables joined across pages.
+
+    A page that fails becomes an empty table whose title says why; if every
+    page fails, the first error is raised so the caller can fall back.
+    """
+    with ThreadPoolExecutor(max_workers=_workers()) as pool:
+        results = list(pool.map(lambda p: _try(read_tables, p), image_paths))
+    if all(isinstance(r, ClaudeReadError) for r in results):
+        raise results[0]
+
+    page_tables = []
+    for page, result in enumerate(results, start=1):
+        if isinstance(result, ClaudeReadError):
+            page_tables.append({"title": f"Could not be read: {result}", "columns": ["Column 1"],
+                                "rows": [[""]], "page": page})
+        else:
+            page_tables.extend({**table, "page": page} for table in result)
+    return merge_continued_tables(page_tables, multi_page=len(image_paths) > 1)

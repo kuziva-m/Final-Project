@@ -7,7 +7,7 @@
       <p class="lede">Photo in. Editable table out.</p>
 
       <form id="upload" action="{{ url_for('process') }}" method="post" enctype="multipart/form-data" class="upload-form">
-        <input type="file" name="image" accept="image/png,image/jpeg,.tif,.tiff,.bmp,.webp" required aria-label="Ledger photo">
+        <input type="file" name="image" accept="image/png,image/jpeg,.tif,.tiff,.bmp,.webp,application/pdf,.pdf" required aria-label="Ledger photo or PDF">
         <button type="submit" class="btn btn-solid">Digitise</button>
       </form>
     </div>
@@ -28,7 +28,7 @@
       <li>
         <span class="step-num">02</span>
         <h3>Upload</h3>
-        <p>Choose the photo above and press Digitise.</p>
+        <p>Choose the photo or scanned PDF above and press Digitise.</p>
       </li>
       <li>
         <span class="step-num">03</span>

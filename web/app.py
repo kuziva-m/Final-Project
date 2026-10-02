@@ -53,12 +53,14 @@ from flask import (
     send_from_directory,
     url_for,
 )
+from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.utils import secure_filename
 
 from extraction.fields import FIELDNAMES
 from ocr import claude_reader
 from ocr.fusion import fuse_from_texts, run_engines
 from preprocessing.clean import preprocess
+from preprocessing.pdf_pages import PdfError, render_pages
 
 # ---------------------------------------------------------------------------
 # Paths -- everything reads from / writes to folders, nothing is hardcoded.
@@ -72,9 +74,14 @@ DB_PATH = DATA_DIR / "records.db"
 for _dir in (UPLOADS_DIR, PROCESSED_DIR):
     _dir.mkdir(parents=True, exist_ok=True)
 
-ALLOWED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp"}
+ALLOWED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp", ".pdf"}
 
 app = Flask(__name__)
+# Scanned PDFs can be large; reject anything over the limit with a clear message.
+app.config["MAX_CONTENT_LENGTH"] = int(os.environ.get("LEDGER_MAX_UPLOAD_MB", "100")) * 1024 * 1024
+# Flask's 500 KB default for submitted form fields is too small for a review
+# page holding many pages of tables.
+app.config["MAX_FORM_MEMORY_SIZE"] = 16 * 1024 * 1024
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret-key-change-in-production")
 
 
@@ -151,6 +158,28 @@ def _unique_stem(original_filename: str) -> str:
     return f"{timestamp}_{stem}"
 
 
+def _env_int(name: str, default: int) -> int:
+    try:
+        return max(1, int(os.environ.get(name, default)))
+    except ValueError:
+        return default
+
+
+# A scanned record book can be dozens of pages; each page read by Claude
+# costs a few cents, so cap the pages read per PDF. The free OCR fallback
+# takes far longer per page on CPU, so it reads fewer.
+MAX_PDF_PAGES = _env_int("LEDGER_MAX_PDF_PAGES", 40)
+MAX_FALLBACK_PDF_PAGES = _env_int("LEDGER_MAX_FALLBACK_PDF_PAGES", 5)
+
+
+def _pages_note(read: int, total: int, is_pdf: bool) -> str:
+    if not is_pdf:
+        return ""
+    if read < total:
+        return f"first {read} of {total} pages"
+    return f"{total} page" + ("s" if total != 1 else "")
+
+
 def _run_pipeline_on_upload(upload, detect_tables: bool = False) -> tuple[dict | None, str | None]:
     """Save *upload*, run preprocess + recognition, and return the result.
 
@@ -158,36 +187,53 @@ def _run_pipeline_on_upload(upload, detect_tables: bool = False) -> tuple[dict |
     surfaces run the exact same pipeline. Returns ``(artifacts, None)`` on
     success or ``(None, error_message)`` on a validation/decode failure.
 
+    A PDF is rendered to one image per page first; every page then goes
+    through the same per-image pipeline, and the first page is the preview.
+
     ``artifacts`` keys: used_engine, source_file, raw_filename,
-    processed_filename, plus either ``tables`` (when *detect_tables* and
-    Claude read the page with its own headings) or ``rows`` + ``provenance``
-    (fixed FIELDNAMES rows).
+    processed_filename, pages_note, plus either ``tables`` (when
+    *detect_tables* and Claude read the pages with their own headings) or
+    ``rows`` + ``provenance`` (fixed FIELDNAMES rows).
     """
     if upload is None or upload.filename == "":
-        return None, "No file selected. Choose an image and try again."
+        return None, "No file selected. Choose a photo or PDF and try again."
 
     if not _allowed_file(upload.filename):
         return None, f"Unsupported file type. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}"
 
     stem = _unique_stem(upload.filename)
     ext = Path(secure_filename(upload.filename)).suffix.lower()
-    raw_filename = f"{stem}{ext}"
-    raw_path = UPLOADS_DIR / raw_filename
-    upload.save(str(raw_path))
+    source_file = f"{stem}{ext}"
+    source_path = UPLOADS_DIR / source_file
+    upload.save(str(source_path))
 
-    img = cv2.imread(str(raw_path), cv2.IMREAD_UNCHANGED)
-    if img is None:
-        raw_path.unlink(missing_ok=True)
+    is_pdf = ext == ".pdf"
+    if is_pdf:
+        try:
+            page_paths, total_pages = render_pages(source_path, UPLOADS_DIR, stem, MAX_PDF_PAGES)
+        except PdfError as exc:
+            source_path.unlink(missing_ok=True)
+            return None, str(exc)
+    else:
+        page_paths, total_pages = [source_path], 1
+
+    def clean_page(page_path: Path) -> Path | None:
+        img = cv2.imread(str(page_path), cv2.IMREAD_UNCHANGED)
+        if img is None:
+            return None
+        clean_path = PROCESSED_DIR / f"{page_path.stem}_clean.png"
+        preprocess(img, save_path=clean_path)
+        return clean_path
+
+    first_clean = clean_page(page_paths[0])
+    if first_clean is None:
+        source_path.unlink(missing_ok=True)
         return None, "Could not read that image. It may be corrupt or an unsupported format."
 
-    processed_filename = f"{stem}_clean.png"
-    processed_path = PROCESSED_DIR / processed_filename
-    preprocess(img, save_path=processed_path)
-
     files = {
-        "source_file": raw_filename,
-        "raw_filename": raw_filename,
-        "processed_filename": processed_filename,
+        "source_file": source_file,
+        "raw_filename": page_paths[0].name,
+        "processed_filename": first_clean.name,
     }
 
     rows = None
@@ -196,24 +242,36 @@ def _run_pipeline_on_upload(upload, detect_tables: bool = False) -> tuple[dict |
         claude_engine = f"Claude vision ({claude_reader.model_name()})"
         try:
             if detect_tables:
-                tables = claude_reader.read_tables(raw_path)
+                tables = claude_reader.read_tables_from_pages(page_paths)
                 if not tables:
                     tables = [{"title": "", "columns": ["Column 1", "Column 2", "Column 3"], "rows": [["", "", ""]]}]
-                return {**files, "tables": tables, "used_engine": claude_engine}, None
-            rows = claude_reader.read_rows(raw_path)
+                return {**files, "tables": tables, "used_engine": claude_engine,
+                        "pages_note": _pages_note(len(page_paths), total_pages, is_pdf)}, None
+            rows = claude_reader.read_rows_from_pages(page_paths)
             provenance = [{} for _ in rows]
             used_engine = claude_engine
+            pages_read = len(page_paths)
         except claude_reader.ClaudeReadError as exc:
             app.logger.warning("Claude read failed, falling back to OCR fusion: %s", exc)
             fallback_note = f" -- Claude unavailable: {exc}"
 
     if rows is None:
         # Tesseract-on-cleaned (row structure) + EasyOCR-on-raw (clean values),
-        # each engine called once, then fused with provenance -- which engine
-        # won each field -- so the review UI can show what fusion auto-corrected.
-        tesseract_text, easyocr_text = run_engines(raw_path, processed_path=processed_path)
-        rows, provenance = fuse_from_texts(tesseract_text, easyocr_text, return_provenance=True)
+        # each engine called once per page, then fused with provenance -- which
+        # engine won each field -- so the review UI can show what fusion
+        # auto-corrected.
+        rows, provenance = [], []
+        fallback_pages = page_paths[:MAX_FALLBACK_PDF_PAGES]
+        for i, page_path in enumerate(fallback_pages):
+            clean_path = first_clean if i == 0 else clean_page(page_path)
+            if clean_path is None:
+                continue
+            tesseract_text, easyocr_text = run_engines(page_path, processed_path=clean_path)
+            page_rows, page_prov = fuse_from_texts(tesseract_text, easyocr_text, return_provenance=True)
+            rows.extend(page_rows)
+            provenance.extend(page_prov)
         used_engine = "fused (tesseract + easyocr)" + fallback_note
+        pages_read = len(fallback_pages)
 
     if not rows:
         # Never dead-end the owner with nothing to correct -- give one blank row.
@@ -221,7 +279,8 @@ def _run_pipeline_on_upload(upload, detect_tables: bool = False) -> tuple[dict |
         provenance = [{}]
         used_engine = "none (manual entry)"
 
-    return {**files, "rows": rows, "provenance": provenance, "used_engine": used_engine}, None
+    return {**files, "rows": rows, "provenance": provenance, "used_engine": used_engine,
+            "pages_note": _pages_note(pages_read, total_pages, is_pdf)}, None
 
 
 def _save_rows(source_file: str, rows: list[dict]) -> int:
@@ -243,6 +302,16 @@ def _save_rows(source_file: str, rows: list[dict]) -> int:
         saved += 1
     db.commit()
     return saved
+
+
+@app.errorhandler(RequestEntityTooLarge)
+def too_large(_exc):
+    limit_mb = app.config["MAX_CONTENT_LENGTH"] // (1024 * 1024)
+    message = f"That file is too large. The limit is {limit_mb} MB."
+    if request.path.startswith("/api/"):
+        return jsonify({"error": message}), 413
+    flash(message)
+    return redirect(url_for("index"))
 
 
 # ---------------------------------------------------------------------------
@@ -272,6 +341,7 @@ def process():
         raw_filename=artifacts["raw_filename"],
         processed_filename=artifacts["processed_filename"],
         used_engine=artifacts["used_engine"],
+        pages_note=artifacts["pages_note"],
     )
 
 
@@ -296,7 +366,7 @@ def save():
 
 # Bounds on the dynamic review form, so a crafted POST can't make the server
 # loop over millions of fields.
-_MAX_TABLES, _MAX_COLS, _MAX_ROWS = 20, 50, 1000
+_MAX_TABLES, _MAX_COLS, _MAX_ROWS = 200, 50, 2000
 
 
 def _form_int(name: str, upper: int) -> int:
@@ -369,6 +439,7 @@ def api_scan():
         "rows": artifacts["rows"],
         "provenance": artifacts["provenance"],
         "used_engine": artifacts["used_engine"],
+        "pages_note": artifacts["pages_note"],
         "source_file": artifacts["source_file"],
         "raw_url": url_for("uploaded_file", filename=artifacts["raw_filename"]),
         "processed_url": url_for("processed_file", filename=artifacts["processed_filename"]),
