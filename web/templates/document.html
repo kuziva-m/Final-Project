@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}{{ summary.label }} · MSME Ledger{% endblock %}
+{% block body_class %}page-document{% endblock %}
+{% block content %}
+  <section class="doc">
+    {% if saved %}<p class="saved-badge">✓ {{ _("Saved") }}</p>{% endif %}
+    <h1>{{ summary.label }}</h1>
+    <p class="meta">{{ summary.date }} · {{ _("1 page") if summary.pages == 1 else _("{n} pages", n=summary.pages) }} · {{ _("1 row") if summary.rows == 1 else _("{n} rows", n=summary.rows) }}</p>
+
+    {% set xlsx_url = url_for('export_document', scan_id=scan.id, fmt='xlsx') %}
+    <div class="doc-actions">
+      <a class="btn btn-solid" href="{{ xlsx_url }}" download>{{ _("Download Excel") }}</a>
+      <button type="button" class="btn btn-outline" id="share-file" data-url="{{ xlsx_url }}" data-filename="{{ download_stem }}.xlsx" data-title="{{ summary.label }}" hidden>{{ _("Share") }}</button>
+      <button type="button" class="btn btn-outline" id="copy-all" hidden>{{ _("Copy all tables") }}</button>
+      <a class="btn btn-outline" href="{{ url_for('edit_document', scan_id=scan.id) }}">{{ _("Edit") }}</a>
+    </div>
+    <p class="more-downloads">
+      {{ _("Also:") }}
+      <a href="{{ url_for('export_document', scan_id=scan.id, fmt='csv') }}" download>CSV</a> ·
+      <a href="{{ url_for('export_document', scan_id=scan.id, fmt='json') }}" download>JSON</a> ·
+      <a href="{{ url_for('export_document', scan_id=scan.id, fmt='xlsx', tidy=0) }}" download>{{ _("Excel exactly as written") }}</a>
+    </p>
+    <p class="doc-note">{{ _("The Excel file has a sheet for each page, plus an All pages sheet with a Page column you can filter. Numbers and dates are tidied so they add up and sort.") }}</p>
+    <script type="application/json" id="doc-tables">{{ scan.tables|tojson }}</script>
+
+    <h2>{{ _("Pages") }}</h2>
+    <ol class="page-list">
+      {% for page, info in pages %}
+      <li>
+        {% if info.thumb %}<img src="{{ info.thumb }}" alt="" width="72" loading="lazy">{% else %}<span class="page-list-blank" aria-hidden="true"></span>{% endif %}
+        <div>
+          <strong>{{ _("Page {n}", n=page) }}</strong>
+          {% for table in info.tables %}
+          <span class="page-list-table">{{ table.title or _("Untitled table") }} · {{ _("1 row") if table.rows == 1 else _("{n} rows", n=table.rows) }}</span>
+          {% endfor %}
+        </div>
+      </li>
+      {% endfor %}
+    </ol>
+
+    <section class="add-page" aria-labelledby="add-page-heading">
+      <h2 id="add-page-heading">{{ _("Add another page") }}</h2>
+      <p>{{ _("Photographed the next page? Add it to this document.") }}</p>
+      {% with append_to=scan.id %}{% include "partials/upload_form.html" %}{% endwith %}
+    </section>
+  </section>
+
+  {% include "partials/busy.html" %}
+{% endblock %}

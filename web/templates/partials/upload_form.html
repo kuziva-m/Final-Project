@@ -1,0 +1,25 @@
+{# The upload form: on the home page, and on a document page to add pages
+   (append_to set). Without JavaScript it is a plain form post to /process. #}
+<form id="upload" action="{{ url_for('process') }}" data-upload-url="{{ url_for('upload') }}" data-progress-url="{{ url_for('progress', token='__TOKEN__') }}" data-max-pages="{{ max_pdf_pages }}" method="post" enctype="multipart/form-data" class="upload-form">
+  {% if append_to %}
+  <input type="hidden" name="append_to" value="{{ append_to }}">
+  {% else %}
+  <label class="field">
+    <span class="field-label">{{ _("Document name") }} <span class="optional">{{ _("(optional)") }}</span></span>
+    <input type="text" name="name" list="doc-names" maxlength="120" autocomplete="off" placeholder="{{ _('e.g. Seed book, December') }}">
+  </label>
+  <datalist id="doc-names">{% for n in names %}<option value="{{ n }}">{% endfor %}</datalist>
+  {% endif %}
+
+  <div class="pick">
+    <button type="button" class="btn btn-outline" id="take-photo" hidden>{{ _("Take photo") }}</button>
+    <label class="file-pick">
+      <span class="btn btn-outline file-pick-btn">{{ _("Choose file") }}</span>
+      <input type="file" name="image" accept="image/png,image/jpeg,.tif,.tiff,.bmp,.webp,application/pdf,.pdf" required aria-label="{{ _('Ledger photo or PDF') }}">
+    </label>
+    <input type="file" id="camera-input" accept="image/*" capture="environment" hidden tabindex="-1" aria-hidden="true">
+    <button type="submit" class="btn btn-solid">{{ _("Digitise") }}</button>
+  </div>
+  <p class="file-summary" id="file-summary" aria-live="polite" hidden></p>
+  <p class="tip">{{ _("Tip: lay the page flat, use daylight, and fit the whole page in the frame.") }}</p>
+</form>

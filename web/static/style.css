@@ -24,6 +24,17 @@
 /* Elements styled with their own display (like .btn) must still disappear when hidden. */
 [hidden] { display: none !important; }
 
+.visually-hidden,
+.js .file-pick input[type="file"] {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
@@ -415,39 +426,13 @@ button:disabled {
   word-break: break-all;
 }
 
-.previews {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1.75rem;
-  margin-bottom: 2.75rem;
-}
-
-.previews figure { margin: 0; }
-
-.previews figcaption {
-  margin-bottom: 0.6rem;
-  font-size: 0.78rem;
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-.previews img {
-  display: block;
-  width: 100%;
-  max-height: 380px;
-  object-fit: contain;
-  padding: 0.6rem;
-  background: var(--white);
-}
-
 /* The editable table sits on a sheet of "ledger paper". */
 
 .sheet {
+  max-height: 70vh;
+  overflow: auto;
   background: var(--paper);
   color: var(--ink);
-  overflow-x: auto;
   box-shadow: 12px 12px 0 var(--navy);
 }
 
@@ -458,6 +443,9 @@ table {
 }
 
 thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   padding: 1rem;
   background: var(--navy);
   color: var(--white);
@@ -511,8 +499,6 @@ thead th input[type="text"]:focus {
   border-bottom-color: var(--gold);
 }
 
-.sheet ~ .table-title { margin-top: 3rem; }
-
 tbody td {
   padding: 0.2rem 0.5rem;
   border-bottom: 1px solid var(--rule);
@@ -521,6 +507,10 @@ tbody td {
 tbody td:first-child { border-right: 2px solid var(--margin-red); }
 
 tbody tr:hover { background: #F1F3FC; }
+
+/* The row being edited stays easy to find. */
+tbody tr:focus-within { background: #E6EAFB; }
+tbody tr:focus-within td:first-child { box-shadow: inset 4px 0 0 var(--blue); }
 
 td input[type="text"] {
   width: 100%;
@@ -544,6 +534,595 @@ td input[type="text"]:focus {
   gap: 1rem;
   margin-top: 2.5rem;
 }
+
+/* ---------------------------------------------------------------------- */
+/* Upload form                                                              */
+/* ---------------------------------------------------------------------- */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  width: min(100%, 30rem);
+}
+
+.field-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.optional {
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--muted);
+}
+
+.field input[type="text"] {
+  padding: 0.7rem 0;
+  border: 0;
+  border-bottom: 1.5px solid var(--line);
+  background: transparent;
+  color: var(--white);
+  font-family: var(--sans);
+  font-size: 1.05rem;
+}
+
+.field input[type="text"]::placeholder { color: rgba(255, 255, 255, 0.55); }
+
+.field input[type="text"]:focus {
+  outline: none;
+  border-bottom-color: var(--gold);
+}
+
+.upload-form { flex-direction: column; align-items: flex-start; }
+
+.pick {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+}
+
+.file-pick { position: relative; display: inline-flex; }
+.no-js .file-pick-btn { display: none; }
+.file-pick:focus-within .file-pick-btn { outline: 2px solid var(--gold); outline-offset: 3px; }
+
+.file-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.9rem;
+  margin: 0;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.file-summary img {
+  width: 52px;
+  height: 52px;
+  object-fit: cover;
+  border: 2px solid var(--white);
+}
+
+.file-warning {
+  flex-basis: 100%;
+  font-weight: 400;
+  color: var(--gold);
+}
+
+.tip {
+  margin: 0;
+  font-size: 0.92rem;
+  color: var(--muted);
+}
+
+/* Recent documents on the home page */
+
+.recent {
+  padding: 3rem var(--edge) 0;
+  border-top: 1px solid var(--line);
+}
+
+.recent h2,
+.doc h2 {
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: clamp(1.8rem, 2.8vw, 2.5rem);
+  line-height: 1;
+  margin: 0 0 1.25rem;
+}
+
+.doc-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 1rem;
+}
+
+.doc-list a {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  height: 100%;
+  padding: 1rem 1.15rem;
+  border: 1px solid var(--line);
+  text-decoration: none;
+  transition: background-color 0.18s ease, border-color 0.18s ease;
+}
+
+.doc-list a:hover { background: rgba(255, 255, 255, 0.08); border-color: var(--white); }
+
+.doc-name {
+  font-family: var(--serif);
+  font-size: 1.45rem;
+  font-weight: 600;
+  line-height: 1.15;
+  word-break: break-word;
+}
+
+.doc-meta { font-size: 0.9rem; color: var(--muted); }
+
+/* Phones: a Scan button within thumb reach (shown by app.js) */
+.thumb-bar { display: none; }
+
+/* Waiting screen: page thumbnails, tick as each is read */
+
+.busy.is-counting .busy-bar span {
+  width: 0;
+  animation: none;
+}
+
+.busy-pages {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.4rem;
+  max-height: 30vh;
+  overflow: auto;
+  margin: 0.25rem 0 0;
+  padding: 0;
+}
+
+.busy-pages:empty { display: none; }
+
+.busy-pages li {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 58px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.12);
+  font-size: 0.75rem;
+  opacity: 0.55;
+  transition: opacity 0.3s ease;
+}
+
+.busy-pages img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.busy-pages li.is-done { opacity: 1; border-color: var(--white); }
+
+.busy-pages li.is-done::after {
+  content: "✓";
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--gold);
+  color: var(--ink);
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.busy-note {
+  margin: 0;
+  font-size: 0.92rem;
+}
+
+.busy-tip {
+  margin: 0;
+  min-height: 1.5em;
+  font-size: 0.9rem;
+  font-style: italic;
+  color: var(--muted);
+}
+
+/* Messages with an action (Undo, Change all) */
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 1.25rem;
+  z-index: 60;
+  transform: translateX(-50%);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem 1rem;
+  width: max-content;
+  max-width: calc(100% - 2rem);
+  padding: 0.85rem 1.1rem;
+  background: var(--navy);
+  color: var(--white);
+  border-left: 3px solid var(--gold);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+}
+
+.page-review .toast { bottom: 6.5rem; }
+
+.toast button,
+.link-button {
+  padding: 0.35rem 0.2rem;
+  border: 0;
+  background: none;
+  color: var(--gold);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  cursor: pointer;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Review page additions                                                    */
+/* ---------------------------------------------------------------------- */
+
+.review-head { margin-bottom: 1.5rem; }
+
+.summary {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.review-hint {
+  margin: 0.3rem 0 0;
+  color: var(--muted);
+}
+
+.notice {
+  margin: 0 0 1.75rem;
+  padding: 0.9rem 1.1rem;
+  background: rgba(228, 184, 92, 0.18);
+  border-left: 3px solid var(--gold);
+}
+
+.notice-why {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.doc-name-field { margin-bottom: 2rem; }
+
+.pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1.75rem;
+  scroll-margin-top: 1rem;
+}
+
+.pager .btn { padding: 0.7rem 1.2rem; }
+
+.pager select,
+.viewer-select {
+  padding: 0.7rem 0.9rem;
+  border: 1.5px solid var(--white);
+  border-radius: 0;
+  background: var(--blue);
+  color: var(--white);
+  font: inherit;
+  font-weight: 600;
+}
+
+.paged .page:not(.is-current) { display: none; }
+
+.page + .page { margin-top: 4rem; }
+.paged .page + .page { margin-top: 0; }
+
+.page-heading {
+  font-family: var(--serif);
+  font-size: 2rem;
+  font-weight: 600;
+  margin: 0 0 1rem;
+}
+
+.page-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.75fr) minmax(0, 1.5fr);
+  gap: 2.25rem;
+  align-items: start;
+}
+
+.page-grid.no-photo { grid-template-columns: minmax(0, 1fr); }
+
+.page-tables { min-width: 0; }
+
+/* The photo of the page, with zoom; it follows the table while scrolling. */
+
+.viewer {
+  position: sticky;
+  top: 1rem;
+  margin: 0;
+}
+
+.viewer-frame {
+  /* Room for the zoom buttons above the Save bar. */
+  height: max(280px, min(calc(100vh - 19rem), 900px));
+  overflow: auto;
+  background: var(--white);
+  overscroll-behavior: contain;
+}
+
+.viewer-frame img {
+  display: block;
+  width: 100%;
+  max-width: none;
+  height: auto;
+}
+
+.viewer-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  margin-top: 0.6rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.viewer-approx {
+  padding: 0.1rem 0.5rem;
+  background: var(--gold);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.viewer-zoom { display: flex; gap: 0.3rem; margin-left: auto; }
+
+.viewer-zoom button {
+  min-width: 2.6rem;
+  padding: 0.45rem 0.6rem;
+  border: 1.5px solid var(--white);
+  background: transparent;
+  color: var(--white);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.viewer-zoom button:hover { background: var(--white); color: var(--blue); }
+
+.table-block + .table-block { margin-top: 3rem; }
+
+.table-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.5rem 1.5rem;
+  margin-bottom: 0.9rem;
+}
+
+.table-tools .table-title { margin: 0; flex: 1 1 18rem; }
+
+/* Cells the reader wasn't sure of (a "?" in them) */
+td input.unsure {
+  background: #FBE8B8;
+  box-shadow: inset 3px 0 0 #D99A1E;
+}
+
+td input.unsure:focus { background: #FFF6DC; }
+
+/* Insert / delete row buttons, added by app.js */
+th.row-tools { width: 1%; }
+
+td.row-tools {
+  width: 1%;
+  padding: 0 0.25rem;
+  white-space: nowrap;
+  border-right: 0;
+}
+
+.row-tools button {
+  width: 2.1rem;
+  height: 2.1rem;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #6A7090;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.row-tools button:hover { border-color: var(--rule); color: var(--ink); }
+.row-tools .row-del:hover { color: #B3261E; }
+
+/* Running totals under columns of numbers */
+tfoot td {
+  position: sticky;
+  bottom: 0;
+  padding: 0.75rem 1rem;
+  background: #EEF0FA;
+  border-top: 2px solid var(--navy);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+tfoot td.total-label {
+  font-size: 0.75rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #4A5070;
+}
+
+/* Save stays in reach at the bottom of long pages */
+.actionbar {
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+  margin: 2.5rem calc(-1 * var(--edge)) 0;
+  padding: 1rem var(--edge);
+  background: var(--blue);
+  border-top: 1px solid var(--line);
+  box-shadow: 0 -10px 24px rgba(11, 16, 64, 0.25);
+}
+
+.actionbar-summary {
+  margin: 0 auto 0 0;
+  font-weight: 600;
+}
+
+.details {
+  margin-top: 3rem;
+  color: var(--muted);
+}
+
+.details summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--white);
+}
+
+.details dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.3rem 1.25rem;
+  margin: 1rem 0;
+}
+
+.details dt { font-weight: 600; }
+.details dd { margin: 0; }
+.details .filename { word-break: break-all; }
+
+.straightened { margin: 0; max-width: 520px; }
+
+.straightened figcaption {
+  margin-bottom: 0.5rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.straightened img {
+  display: block;
+  width: 100%;
+  padding: 0.6rem;
+  background: var(--white);
+}
+
+/* ---------------------------------------------------------------------- */
+/* Document page                                                            */
+/* ---------------------------------------------------------------------- */
+
+.doc { padding: 1.5rem var(--edge) 4rem; }
+
+.doc h1 {
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: clamp(2.6rem, 5vw, 4.6rem);
+  line-height: 1;
+  margin: 0 0 0.6rem;
+  word-break: break-word;
+}
+
+.saved-badge {
+  display: inline-block;
+  margin: 0 0 1rem;
+  padding: 0.3rem 0.8rem;
+  background: var(--gold);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.doc .meta { margin-bottom: 1.75rem; }
+
+.doc-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.more-downloads { margin: 1.25rem 0 0.4rem; }
+.more-downloads a { font-weight: 600; text-underline-offset: 4px; }
+
+.doc-note {
+  max-width: 44rem;
+  margin: 0 0 3rem;
+  font-size: 0.92rem;
+  color: var(--muted);
+}
+
+.page-list {
+  list-style: none;
+  margin: 0 0 3.5rem;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem 1.5rem;
+}
+
+.page-list li {
+  display: flex;
+  gap: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+}
+
+.page-list img,
+.page-list-blank {
+  flex-shrink: 0;
+  width: 72px;
+  height: 96px;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.page-list div { display: flex; flex-direction: column; gap: 0.15rem; }
+.page-list-table { font-size: 0.92rem; color: var(--muted); }
+
+.add-page {
+  padding-top: 3rem;
+  border-top: 1px solid var(--line);
+}
+
+.add-page > p { margin: 0 0 0.5rem; color: var(--muted); }
+.add-page .upload-form { margin-top: 1.25rem; }
+
+/* Language choice in the footer */
+.languages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  margin-left: auto;
+}
+
+.languages span[aria-current] { font-weight: 600; text-decoration: underline; text-underline-offset: 5px; }
+.languages a { color: var(--muted); text-decoration: none; }
+.languages a:hover { color: var(--white); text-decoration: underline; }
 
 /* ---------------------------------------------------------------------- */
 /* Footer                                                                   */
@@ -596,11 +1175,47 @@ td input[type="text"]:focus {
   .upload-form { justify-content: center; }
 
   .howto ol { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .upload-form { align-items: center; }
+  .field { text-align: left; }
+  .pick { justify-content: center; }
+
+  .page-grid { grid-template-columns: minmax(0, 1fr); gap: 1.25rem; }
+  .viewer { position: static; }
+  .viewer-frame { height: 32vh; }
 }
 
 @media (max-width: 600px) {
-  .previews,
   .howto ol { grid-template-columns: 1fr; }
-  .upload-form .btn { width: 100%; }
-  .sheet { box-shadow: 6px 6px 0 var(--navy); }
+  .pick, .pick .btn, .file-pick { width: 100%; }
+  .sheet { box-shadow: 6px 6px 0 var(--navy); max-height: 65vh; }
+
+  /* Bigger targets for thumbs, and 16px text so phones don't zoom on focus. */
+  .btn { min-height: 48px; }
+  input[type="text"], select { font-size: 16px !important; }
+  td input[type="text"] { padding: 0.75rem 0.5rem; }
+  .row-tools button { width: 2.75rem; height: 2.75rem; }
+  .viewer-zoom button { min-width: 3rem; min-height: 2.75rem; }
+  .nav a:not(.btn) { padding: 0.5rem 0; }
+
+  .page-home .thumb-bar {
+    position: fixed;
+    left: 1rem;
+    right: 1rem;
+    bottom: 1rem;
+    z-index: 20;
+    display: flex;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  }
+  .page-home .thumb-bar[hidden] { display: none !important; }
+
+  /* One slim row of buttons; the counts are already at the top of the page. */
+  .actionbar { flex-wrap: nowrap; gap: 0.5rem; padding-top: 0.6rem; padding-bottom: 0.6rem; }
+  .actionbar .btn { flex: 1 1 0; padding: 0.7rem 0.4rem; font-size: 0.95rem; }
+  .actionbar-summary { display: none; }
+  .page-review .toast { bottom: 5.5rem; }
+  .page-home .site-footer { padding-bottom: 6rem; }
+
+  .site-footer { flex-wrap: wrap; }
+  .languages { margin-left: 0; flex-basis: 100%; }
+  .doc-actions .btn { flex: 1 1 auto; }
 }

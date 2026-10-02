@@ -1,98 +1,198 @@
 {% extends "base.html" %}
-{% block title %}Review · MSME Ledger Digitisation{% endblock %}
+{% block title %}{{ _("Check your table") }} · MSME Ledger{% endblock %}
+{% block body_class %}page-review{% endblock %}
+
+{% macro counts(pages, rows, unsure) -%}
+  {{ _("1 page") if pages == 1 else _("{n} pages", n=pages) }} · {{ _("1 row") if rows == 1 else _("{n} rows", n=rows) }} · {{ _("1 cell to check") if unsure == 1 else _("{n} cells to check", n=unsure) }}
+{%- endmacro %}
+
+{% macro viewer(image, label, choices=None) -%}
+  <figure class="viewer">
+    <div class="viewer-frame">
+      <img src="{{ image }}" alt="{{ label }}" loading="lazy">
+    </div>
+    <figcaption class="viewer-bar">
+      {% if choices and choices|length > 1 %}
+      <select class="viewer-select" aria-label="{{ _('Photo to show') }}">
+        {% for page, url in choices %}<option value="{{ url }}">{{ _("Page {n}", n=page) }}</option>{% endfor %}
+      </select>
+      {% else %}
+      <span>{{ _("Your photo") }}</span>
+      {% endif %}
+      <span class="viewer-approx" hidden>{{ _("approx. position") }}</span>
+      <span class="viewer-zoom" hidden>
+        <button type="button" data-zoom="out" aria-label="{{ _('Zoom out') }}">−</button>
+        <button type="button" data-zoom="fit">{{ _("Fit") }}</button>
+        <button type="button" data-zoom="in" aria-label="{{ _('Zoom in') }}">+</button>
+      </span>
+    </figcaption>
+  </figure>
+{%- endmacro %}
+
+{% macro actions() -%}
+  <div class="actionbar">
+    <p class="actionbar-summary" id="actionbar-summary" aria-hidden="true"></p>
+    <button type="button" class="btn btn-outline" id="next-unsure" hidden>{{ _("Next to check") }}</button>
+    <button type="submit" class="btn btn-solid">{{ _("Save") }}</button>
+    {% if scan %}
+    <a class="btn btn-outline" href="{{ url_for('document', scan_id=scan.id) }}">{{ _("Cancel") }}</a>
+    {% elif append_to %}
+    <a class="btn btn-outline" href="{{ url_for('document', scan_id=append_to.id) }}">{{ _("Cancel") }}</a>
+    {% else %}
+    <a class="btn btn-outline" href="{{ url_for('index') }}#upload">{{ _("Scan another") }}</a>
+    {% endif %}
+  </div>
+{%- endmacro %}
+
 {% block content %}
   <section class="review">
-    <h1>Review</h1>
-    <p class="meta"><span class="filename">{{ source_file }}</span>{% if pages_note %} · {{ pages_note }}{% endif %} · {{ used_engine }}</p>
-
-    <div class="previews">
-      <figure>
-        <figcaption>Raw{% if pages_note %} · page 1{% endif %}</figcaption>
-        <img src="{{ url_for('uploaded_file', filename=raw_filename) }}" alt="Raw upload">
-      </figure>
-      <figure>
-        <figcaption>Cleaned{% if pages_note %} · page 1{% endif %}</figcaption>
-        <img src="{{ url_for('processed_file', filename=processed_filename) }}" alt="Preprocessed image">
-      </figure>
+    <div class="review-head">
+      <h1>
+        {%- if scan %}{{ _("Edit document") }}
+        {%- elif append_to %}{{ _("Add pages to {name}", name=append_to.label) }}
+        {%- else %}{{ _("Check your table") }}{% endif -%}
+      </h1>
+      <p class="summary" id="summary">{{ counts(summary.pages, summary.rows, summary.unsure) }}</p>
+      <p class="review-hint">{{ _("Fix anything read wrong. Cells with ? are amber: the reader wasn't sure.") }}</p>
     </div>
 
+    {% if free_reader %}
+    <p class="notice">
+      {{ _("Read with the free reader, which is less accurate. Please check every row.") }}
+      {% if fallback_reason %}<span class="notice-why">{{ _("Why: {reason}", reason=_(fallback_reason)) }}</span>{% endif %}
+    </p>
+    {% endif %}
+
     {% if tables %}
-    <form action="{{ url_for('save_tables') }}" method="post" class="rows-form">
+    <form action="{{ url_for('save_tables') }}" method="post" class="rows-form" id="review-form" data-mode="tables">
       <input type="hidden" name="source_file" value="{{ source_file }}">
       <input type="hidden" name="engine" value="{{ used_engine }}">
       <input type="hidden" name="num_tables" value="{{ tables|length }}">
+      {% if scan %}<input type="hidden" name="scan_id" value="{{ scan.id }}">{% endif %}
+      {% if append_to %}<input type="hidden" name="append_to" value="{{ append_to.id }}">{% endif %}
 
-      {% for table in tables %}
-      {% set t = loop.index0 %}
-      <input type="hidden" name="num_cols_{{ t }}" value="{{ table.columns|length }}">
-      <input type="hidden" name="num_rows_{{ t }}" value="{{ table.rows|length }}">
-      <input type="hidden" name="page_{{ t }}" value="{{ table.page or 1 }}">
-      <input class="table-title" type="text" name="title_{{ t }}" value="{{ table.title }}" placeholder="Table {{ loop.index }}" aria-label="Title of table {{ loop.index }}">
+      {% if not append_to %}
+      <label class="field doc-name-field">
+        <span class="field-label">{{ _("Document name") }}</span>
+        <input type="text" name="name" value="{{ doc_name }}" list="doc-names" maxlength="120" autocomplete="off" placeholder="{{ _('e.g. Seed book, December') }}">
+      </label>
+      <datalist id="doc-names">{% for n in names %}<option value="{{ n }}">{% endfor %}</datalist>
+      {% endif %}
 
-      <div class="sheet">
-        <table>
-          <thead>
-            <tr>
-              {% for col in table.columns %}
-              <th scope="col"><input type="text" name="col_{{ t }}_{{ loop.index0 }}" value="{{ col }}" aria-label="Heading of column {{ loop.index }}"></th>
-              {% endfor %}
-            </tr>
-          </thead>
-          <tbody>
-            {% for row in table.rows %}
-            {% set r = loop.index0 %}
-            <tr>
-              {% for cell in row %}
-              <td><input type="text" name="cell_{{ t }}_{{ r }}_{{ loop.index0 }}" value="{{ cell }}" aria-label="{{ table.columns[loop.index0] }}, row {{ r + 1 }}"></td>
-              {% endfor %}
-            </tr>
+      {% if groups|length > 1 %}
+      <nav class="pager" id="pager" aria-label="{{ _('Pages') }}" hidden>
+        <button type="button" class="btn btn-outline" data-step="-1">‹ {{ _("Previous") }}</button>
+        <select id="pager-select" aria-label="{{ _('Go to page') }}">
+          {% for group in groups %}<option value="{{ loop.index0 }}">{{ _("Page {n} of {total}", n=group.page, total=groups[-1].page) }}</option>{% endfor %}
+        </select>
+        <button type="button" class="btn btn-outline" data-step="1">{{ _("Next") }} ›</button>
+      </nav>
+      {% endif %}
+
+      {% for group in groups %}
+      <section class="page" id="page-{{ group.page }}" data-page="{{ group.page }}">
+        {% if groups|length > 1 %}<h2 class="page-heading">{{ _("Page {n}", n=group.page) }}</h2>{% endif %}
+        <div class="page-grid{% if not group.image %} no-photo{% endif %}">
+          {% if group.image %}{{ viewer(group.image, _("Photo of page {n}", n=group.page)) }}{% endif %}
+
+          <div class="page-tables">
+            {% for t, table in group.tables %}
+            <div class="table-block" data-table="{{ t }}">
+              <input type="hidden" name="num_cols_{{ t }}" value="{{ table.columns|length }}">
+              <input type="hidden" name="num_rows_{{ t }}" value="{{ table.rows|length }}">
+              <input type="hidden" name="page_{{ t }}" value="{{ table.page or 1 }}">
+              <input type="hidden" name="image_{{ t }}" value="{{ table.image or '' }}">
+              <div class="table-tools">
+                <input class="table-title" type="text" name="title_{{ t }}" value="{{ table.title }}" placeholder="{{ _('Table {n}', n=loop.index) }}" aria-label="{{ _('Table title') }}">
+              </div>
+
+              <div class="sheet">
+                <table>
+                  <thead>
+                    <tr>
+                      {% for col in table.columns %}
+                      <th scope="col"><input type="text" name="col_{{ t }}_{{ loop.index0 }}" value="{{ col }}" aria-label="{{ _('Heading of column {n}', n=loop.index) }}"></th>
+                      {% endfor %}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for row in table.rows %}
+                    {% set r = loop.index0 %}
+                    <tr>
+                      {% for cell in row %}
+                      <td><input type="text" name="cell_{{ t }}_{{ r }}_{{ loop.index0 }}" value="{{ cell }}"{% if '?' in cell %} class="unsure"{% endif %} aria-label="{{ table.columns[loop.index0] }}, {{ _('row {n}', n=r + 1) }}"></td>
+                      {% endfor %}
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
             {% endfor %}
-          </tbody>
-        </table>
-      </div>
+          </div>
+        </div>
+      </section>
       {% endfor %}
 
-      <div class="actions">
-        <button type="submit" class="btn btn-solid">Save</button>
-        <a class="btn btn-outline" href="{{ url_for('index') }}#upload">Scan another</a>
-      </div>
+      {{ actions() }}
     </form>
 
     {% else %}
-    <form action="{{ url_for('save') }}" method="post" class="rows-form">
+    <form action="{{ url_for('save') }}" method="post" class="rows-form" id="review-form" data-mode="rows">
       <input type="hidden" name="source_file" value="{{ source_file }}">
       <input type="hidden" name="num_rows" value="{{ rows|length }}">
 
-      <div class="sheet">
-        <table>
-          <thead>
-            <tr>
-              <th scope="col">Date</th>
-              <th scope="col">Item</th>
-              <th scope="col">Qty</th>
-              <th scope="col">Price</th>
-              <th scope="col">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for row in rows %}
-            <tr>
-              <td><input type="text" name="date_{{ loop.index0 }}" value="{{ row.date }}" aria-label="Date, row {{ loop.index }}"></td>
-              <td><input type="text" name="item_{{ loop.index0 }}" value="{{ row.item }}" aria-label="Item, row {{ loop.index }}"></td>
-              <td><input type="text" name="qty_{{ loop.index0 }}" value="{{ row.qty }}" aria-label="Quantity, row {{ loop.index }}"></td>
-              <td><input type="text" name="price_{{ loop.index0 }}" value="{{ row.price }}" aria-label="Price, row {{ loop.index }}"></td>
-              <td><input type="text" name="total_{{ loop.index0 }}" value="{{ row.total }}" aria-label="Total, row {{ loop.index }}"></td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
+      <section class="page" data-page="1">
+        <div class="page-grid{% if not page_images %} no-photo{% endif %}">
+          {% if page_images %}{{ viewer(page_images[0][1], _("Photo of your ledger"), page_images) }}{% endif %}
+          <div class="page-tables">
+            <div class="table-block">
+              <div class="table-tools"></div>
+              <div class="sheet">
+                <table>
+                  <thead>
+                    <tr>
+                      <th scope="col">{{ _("Date") }}</th>
+                      <th scope="col">{{ _("Item") }}</th>
+                      <th scope="col">{{ _("Qty") }}</th>
+                      <th scope="col">{{ _("Price") }}</th>
+                      <th scope="col">{{ _("Total") }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for row in rows %}
+                    {% set r = loop.index0 %}
+                    <tr>
+                      {% for field, label in (("date", _("Date")), ("item", _("Item")), ("qty", _("Qty")), ("price", _("Price")), ("total", _("Total"))) %}
+                      {% set value = row[field] or "" %}
+                      <td><input type="text" name="{{ field }}_{{ r }}" data-field="{{ field }}" value="{{ value }}"{% if '?' in value %} class="unsure"{% endif %} aria-label="{{ label }}, {{ _('row {n}', n=r + 1) }}"></td>
+                      {% endfor %}
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
 
-      <div class="actions">
-        <button type="submit" class="btn btn-solid">Save</button>
-        <a class="btn btn-outline" href="{{ url_for('index') }}#upload">Scan another</a>
-      </div>
+      {{ actions() }}
     </form>
     {% endif %}
+
+    <details class="details">
+      <summary>{{ _("Details") }}</summary>
+      <dl>
+        {% if source_file %}<dt>{{ _("File") }}</dt><dd class="filename">{{ source_file }}{% if pages_note %} · {{ pages_note }}{% endif %}</dd>{% endif %}
+        {% if used_engine %}<dt>{{ _("Read by") }}</dt><dd>{{ used_engine }}</dd>{% endif %}
+      </dl>
+      {% if processed_url %}
+      <figure class="straightened">
+        <figcaption>{{ _("Straightened photo") }}{% if pages_note %} · {{ _("Page {n}", n=1) }}{% endif %}</figcaption>
+        <img src="{{ processed_url }}" alt="{{ _('Straightened photo') }}" loading="lazy">
+      </figure>
+      {% endif %}
+    </details>
   </section>
 {% endblock %}

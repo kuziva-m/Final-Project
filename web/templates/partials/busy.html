@@ -1,0 +1,13 @@
+{# Full-screen waiting screen while a file uploads and is read (app.js). #}
+<div class="busy" id="busy" hidden>
+  <div class="busy-inner" role="status" aria-live="polite">
+    {% include "partials/emblem.svg" %}
+    <p class="busy-title" id="busy-title">{{ _("Uploading…") }}</p>
+    <div class="busy-bar" aria-hidden="true"><span id="busy-bar-fill"></span></div>
+    <p class="busy-detail" id="busy-detail"></p>
+    <ol class="busy-pages" id="busy-pages" aria-hidden="true"></ol>
+    <p class="busy-note" id="busy-note" hidden>{{ _("You can switch to another app. Your table will be waiting when you come back.") }}</p>
+    <p class="busy-tip" id="busy-tip"></p>
+    <button type="button" class="btn btn-outline busy-retry" id="busy-retry" hidden>{{ _("Try again") }}</button>
+  </div>
+</div>

@@ -259,40 +259,46 @@ def _try(read, image_path):
         return exc
 
 
-def read_rows_from_pages(image_paths: list[Path]) -> list[dict]:
+def _read_pages(read, image_paths: list[Path], on_page_done=None) -> list:
+    """Run *read* on every page, a few at a time; results in page order.
+    *on_page_done(index)* is called as each page finishes (for progress)."""
+
+    def run(index: int, path):
+        result = _try(read, path)
+        if on_page_done:
+            on_page_done(index)
+        return result
+
+    with ThreadPoolExecutor(max_workers=_workers()) as pool:
+        return list(pool.map(run, range(len(image_paths)), image_paths))
+
+
+def read_rows_from_pages(image_paths: list[Path], on_page_done=None) -> list[dict]:
     """FIELDNAMES rows from every page, in page order. Any failed page raises,
     so the caller can fall back for the whole document."""
-    with ThreadPoolExecutor(max_workers=_workers()) as pool:
-        results = list(pool.map(lambda p: _try(read_rows, p), image_paths))
+    results = _read_pages(read_rows, image_paths, on_page_done)
     for result in results:
         if isinstance(result, ClaudeReadError):
             raise result
     return [row for page_rows in results for row in page_rows]
 
 
-def read_tables_from_pages(image_paths: list[Path]) -> list[dict]:
+def read_tables_from_pages(image_paths: list[Path], on_page_done=None) -> list[dict]:
     """Tables from every page, in page order, each tagged with its ``page``.
 
     Pages stay separate (they become separate sheets in the Excel export).
-    On multi-page documents each title is labelled with its page. A page
-    that fails becomes an empty table whose title says why; if every page
-    fails, the first error is raised so the caller can fall back.
+    A page that fails becomes an empty table whose title says why; if every
+    page fails, the first error is raised so the caller can fall back.
     """
-    with ThreadPoolExecutor(max_workers=_workers()) as pool:
-        results = list(pool.map(lambda p: _try(read_tables, p), image_paths))
+    results = _read_pages(read_tables, image_paths, on_page_done)
     if all(isinstance(r, ClaudeReadError) for r in results):
         raise results[0]
 
-    multi_page = len(image_paths) > 1
     tables = []
     for page, result in enumerate(results, start=1):
         if isinstance(result, ClaudeReadError):
             page_tables = [{"title": f"Could not be read: {result}", "columns": ["Column 1"], "rows": [[""]]}]
         else:
             page_tables = result
-        for table in page_tables:
-            title = table["title"]
-            if multi_page:
-                title = f"{title} (page {page})" if title else f"Page {page}"
-            tables.append({**table, "title": title, "page": page})
+        tables.extend({**table, "page": page} for table in page_tables)
     return tables

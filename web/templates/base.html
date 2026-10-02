@@ -1,29 +1,33 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{ lang }}" class="no-js">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}MSME Ledger Digitisation{% endblock %}</title>
+  <script>document.documentElement.className = "js";</script>
+  {% if request.headers.get("Save-Data", "").lower() != "on" %}
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=Inter:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600&family=Inter:wght@400;600&display=swap">
+  {% endif %}
+  <link rel="icon" href="{{ url_for('static', filename='logo.png') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
-<body>
+<body class="{% block body_class %}{% endblock %}">
   <header class="site-header">
-    <nav class="nav nav-left" aria-label="Exports">
-      <a href="{{ url_for('export', fmt='xlsx') }}">Export Excel</a>
-      <a href="{{ url_for('export', fmt='csv') }}">Export CSV</a>
-      <a href="{{ url_for('export', fmt='json') }}">Export JSON</a>
+    <nav class="nav nav-left" aria-label="{{ _('Exports') }}">
+      <a href="{{ url_for('export', fmt='xlsx') }}">{{ _("Export Excel") }}</a>
+      <a href="{{ url_for('export', fmt='csv') }}">{{ _("Export CSV") }}</a>
+      <a href="{{ url_for('export', fmt='json') }}">{{ _("Export JSON") }}</a>
     </nav>
 
-    <a class="brand" href="{{ url_for('index') }}" aria-label="MSME Ledger Digitisation, home">
+    <a class="brand" href="{{ url_for('index') }}" aria-label="{{ _('MSME Ledger Digitisation, home') }}">
       {% include "partials/emblem.svg" %}
       <span class="wordmark">MSME&nbsp;LEDGER</span>
     </a>
 
-    <nav class="nav nav-right" aria-label="Primary">
-      <a class="btn btn-outline" href="{{ url_for('index') }}#upload">Scan a ledger</a>
+    <nav class="nav nav-right" aria-label="{{ _('Primary') }}">
+      <a class="btn btn-outline" href="{{ url_for('index') }}#upload">{{ _("Scan a ledger") }}</a>
     </nav>
   </header>
 
@@ -42,9 +46,18 @@
   </main>
 
   <footer class="site-footer">
-    <span class="crest"><img src="{{ url_for('static', filename='logo.png') }}" alt="Chinhoyi University of Technology crest"></span>
+    <span class="crest"><img src="{{ url_for('static', filename='logo.png') }}" alt="{{ _('Chinhoyi University of Technology crest') }}" width="48" height="48" loading="lazy"></span>
     <p>Chinhoyi University of Technology</p>
+    <nav class="languages" aria-label="{{ _('Language') }}">
+      {% set back = request.full_path.rstrip('?') if request.method == 'GET' else url_for('index') %}
+      {% for code, label in LANGUAGES.items() %}
+        {% if code == lang %}<span aria-current="true">{{ label }}</span>{% else %}<a href="{{ url_for('set_language', code=code, next=back) }}" hreflang="{{ code }}" lang="{{ code }}">{{ label }}</a>{% endif %}
+      {% endfor %}
+    </nav>
   </footer>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+  <script>window.I18N = {{ js_strings|tojson }};</script>
   <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>

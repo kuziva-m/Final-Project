@@ -1,15 +1,13 @@
 {% extends "base.html" %}
 {% block title %}MSME Ledger Digitisation{% endblock %}
+{% block body_class %}page-home{% endblock %}
 {% block content %}
   <section class="hero">
     <div class="hero-copy">
-      <h1>Digitise handwritten ledgers</h1>
-      <p class="lede">Photo in. Editable table out.</p>
+      <h1>{{ _("Digitise handwritten ledgers") }}</h1>
+      <p class="lede">{{ _("Photo in. Editable table out.") }}</p>
 
-      <form id="upload" action="{{ url_for('process') }}" data-upload-url="{{ url_for('upload') }}" method="post" enctype="multipart/form-data" class="upload-form">
-        <input type="file" name="image" accept="image/png,image/jpeg,.tif,.tiff,.bmp,.webp,application/pdf,.pdf" required aria-label="Ledger photo or PDF">
-        <button type="submit" class="btn btn-solid">Digitise</button>
-      </form>
+      {% with append_to=None %}{% include "partials/upload_form.html" %}{% endwith %}
     </div>
 
     <div class="hero-emblem">
@@ -17,39 +15,49 @@
     </div>
   </section>
 
-  <div class="busy" id="busy" hidden>
-    <div class="busy-inner" role="status" aria-live="polite">
-      {% include "partials/emblem.svg" %}
-      <p class="busy-title" id="busy-title">Uploading…</p>
-      <div class="busy-bar" aria-hidden="true"><span id="busy-bar-fill"></span></div>
-      <p class="busy-detail" id="busy-detail"></p>
-      <button type="button" class="btn btn-outline busy-retry" id="busy-retry" hidden>Try again</button>
-    </div>
-  </div>
+  {% include "partials/busy.html" %}
+
+  {% if recent %}
+  <section class="recent" aria-labelledby="recent-heading">
+    <h2 id="recent-heading">{{ _("Recent documents") }}</h2>
+    <ul class="doc-list">
+      {% for doc in recent %}
+      <li>
+        <a href="{{ url_for('document', scan_id=doc.id) }}">
+          <span class="doc-name">{{ doc.label }}</span>
+          <span class="doc-meta">{{ doc.date }} · {{ _("1 page") if doc.pages == 1 else _("{n} pages", n=doc.pages) }} · {{ _("1 row") if doc.rows == 1 else _("{n} rows", n=doc.rows) }}</span>
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
 
   <section class="howto" aria-labelledby="howto-heading">
-    <h2 id="howto-heading">How to use it</h2>
+    <h2 id="howto-heading">{{ _("How to use it") }}</h2>
     <ol>
       <li>
         <span class="step-num">01</span>
-        <h3>Photograph</h3>
-        <p>Lay the page flat in good light and take a photo.</p>
+        <h3>{{ _("Photograph") }}</h3>
+        <p>{{ _("Lay the page flat in good light and take a photo.") }}</p>
       </li>
       <li>
         <span class="step-num">02</span>
-        <h3>Upload</h3>
-        <p>Choose the photo or scanned PDF above and press Digitise.</p>
+        <h3>{{ _("Upload") }}</h3>
+        <p>{{ _("Choose the photo or scanned PDF above and press Digitise.") }}</p>
       </li>
       <li>
         <span class="step-num">03</span>
-        <h3>Check</h3>
-        <p>Fix any heading or cell that was read wrong.</p>
+        <h3>{{ _("Check") }}</h3>
+        <p>{{ _("Fix any heading or cell that was read wrong. Amber cells need a look.") }}</p>
       </li>
       <li>
         <span class="step-num">04</span>
-        <h3>Save</h3>
-        <p>Save, then export to Excel (one sheet per page), CSV or JSON from the top bar.</p>
+        <h3>{{ _("Save") }}</h3>
+        <p>{{ _("Save, then download Excel, share it, or add the next page.") }}</p>
       </li>
     </ol>
   </section>
+
+  <a class="btn btn-solid thumb-bar" id="thumb-bar" href="#upload" hidden>{{ _("Scan a ledger") }}</a>
 {% endblock %}
