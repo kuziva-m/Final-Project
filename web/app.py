@@ -29,6 +29,7 @@ import csv
 import io
 import json
 import os
+import re
 import sqlite3
 import sys
 from datetime import datetime, timezone
@@ -180,8 +181,40 @@ def _pages_note(read: int, total: int, is_pdf: bool) -> str:
     return f"{total} page" + ("s" if total != 1 else "")
 
 
+def _save_upload(upload) -> tuple[Path | None, str | None]:
+    """Validate and save *upload*; return ``(saved_path, None)`` or ``(None, error)``."""
+    if upload is None or upload.filename == "":
+        return None, "No file selected. Choose a photo or PDF and try again."
+
+    if not _allowed_file(upload.filename):
+        return None, f"Unsupported file type. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}"
+
+    stem = _unique_stem(upload.filename)
+    ext = Path(secure_filename(upload.filename)).suffix.lower()
+    source_path = UPLOADS_DIR / f"{stem}{ext}"
+    upload.save(str(source_path))
+    return source_path, None
+
+
+def _uploaded_path(token: str) -> Path | None:
+    """The saved upload named by *token* (from /upload), or None if invalid."""
+    name = secure_filename(token or "")
+    if not name or name != token or not _allowed_file(name):
+        return None
+    path = UPLOADS_DIR / name
+    return path if path.is_file() else None
+
+
 def _run_pipeline_on_upload(upload, detect_tables: bool = False) -> tuple[dict | None, str | None]:
-    """Save *upload*, run preprocess + recognition, and return the result.
+    """Save *upload*, then run the pipeline on it (see _run_pipeline_on_file)."""
+    source_path, error = _save_upload(upload)
+    if error:
+        return None, error
+    return _run_pipeline_on_file(source_path, detect_tables)
+
+
+def _run_pipeline_on_file(source_path: Path, detect_tables: bool = False) -> tuple[dict | None, str | None]:
+    """Run preprocess + recognition on a saved upload and return the result.
 
     Shared by the HTML /process route and the JSON /api/scan route so both
     surfaces run the exact same pipeline. Returns ``(artifacts, None)`` on
@@ -195,17 +228,9 @@ def _run_pipeline_on_upload(upload, detect_tables: bool = False) -> tuple[dict |
     *detect_tables* and Claude read the pages with their own headings) or
     ``rows`` + ``provenance`` (fixed FIELDNAMES rows).
     """
-    if upload is None or upload.filename == "":
-        return None, "No file selected. Choose a photo or PDF and try again."
-
-    if not _allowed_file(upload.filename):
-        return None, f"Unsupported file type. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}"
-
-    stem = _unique_stem(upload.filename)
-    ext = Path(secure_filename(upload.filename)).suffix.lower()
-    source_file = f"{stem}{ext}"
-    source_path = UPLOADS_DIR / source_file
-    upload.save(str(source_path))
+    source_file = source_path.name
+    stem = source_path.stem
+    ext = source_path.suffix.lower()
 
     is_pdf = ext == ".pdf"
     if is_pdf:
@@ -308,7 +333,7 @@ def _save_rows(source_file: str, rows: list[dict]) -> int:
 def too_large(_exc):
     limit_mb = app.config["MAX_CONTENT_LENGTH"] // (1024 * 1024)
     message = f"That file is too large. The limit is {limit_mb} MB."
-    if request.path.startswith("/api/"):
+    if request.path.startswith("/api/") or request.path == "/upload":
         return jsonify({"error": message}), 413
     flash(message)
     return redirect(url_for("index"))
@@ -325,14 +350,7 @@ def index():
     return render_template("index.html")
 
 
-@app.route("/process", methods=["POST"])
-def process():
-    """Save the upload, run the pipeline, and show the editable table(s)."""
-    artifacts, error = _run_pipeline_on_upload(request.files.get("image"), detect_tables=True)
-    if error:
-        flash(error)
-        return redirect(url_for("index"))
-
+def _render_review(artifacts: dict):
     return render_template(
         "process.html",
         tables=artifacts.get("tables"),
@@ -343,6 +361,62 @@ def process():
         used_engine=artifacts["used_engine"],
         pages_note=artifacts["pages_note"],
     )
+
+
+def _review_path(token: str) -> Path | None:
+    """Where the read result for upload *token* is kept, or None if invalid."""
+    name = secure_filename(token or "")
+    if not name or name != token:
+        return None
+    return PROCESSED_DIR / f"{name}.review.json"
+
+
+@app.route("/process", methods=["POST"])
+def process():
+    """Run the pipeline and show the editable table(s).
+
+    Plain form submit (no JavaScript): takes the file and renders the review.
+
+    With a ``token`` from /upload (the page's script uploads first so it can
+    show real upload progress): reads that file, keeps the result, and
+    answers ``{"review_url": ...}`` -- or ``{"error": ...}`` -- so the script
+    can open the review page as a normal page load.
+    """
+    token = request.form.get("token")
+    if token:
+        source_path = _uploaded_path(token)
+        if source_path is None:
+            return jsonify({"error": "That upload could not be found. Please choose the file again."}), 404
+        artifacts, error = _run_pipeline_on_file(source_path, detect_tables=True)
+        if error:
+            return jsonify({"error": error}), 400
+        _review_path(token).write_text(json.dumps(artifacts, ensure_ascii=False), encoding="utf-8")
+        return jsonify({"review_url": url_for("review", token=token)})
+
+    artifacts, error = _run_pipeline_on_upload(request.files.get("image"), detect_tables=True)
+    if error:
+        flash(error)
+        return redirect(url_for("index"))
+    return _render_review(artifacts)
+
+
+@app.route("/review/<token>")
+def review(token: str):
+    """Show a result read earlier via /process (refresh-safe)."""
+    path = _review_path(token)
+    if path is None or not path.is_file():
+        flash("That review could not be found. Please upload the file again.")
+        return redirect(url_for("index"))
+    return _render_review(json.loads(path.read_text(encoding="utf-8")))
+
+
+@app.route("/upload", methods=["POST"])
+def upload():
+    """Save an upload without reading it; returns ``{"token": ...}`` for /process."""
+    source_path, error = _save_upload(request.files.get("image"))
+    if error:
+        return jsonify({"error": error}), 400
+    return jsonify({"token": source_path.name})
 
 
 @app.route("/save", methods=["POST"])
@@ -366,7 +440,7 @@ def save():
 
 # Bounds on the dynamic review form, so a crafted POST can't make the server
 # loop over millions of fields.
-_MAX_TABLES, _MAX_COLS, _MAX_ROWS = 200, 50, 2000
+_MAX_TABLES, _MAX_COLS, _MAX_ROWS, _MAX_PAGE = 200, 50, 2000, 10000
 
 
 def _form_int(name: str, upper: int) -> int:
@@ -397,6 +471,7 @@ def save_tables():
                 "title": request.form.get(f"title_{t}", "").strip(),
                 "columns": [col or f"Column {i + 1}" for i, col in enumerate(columns)],
                 "rows": rows,
+                "page": _form_int(f"page_{t}", _MAX_PAGE) or 1,
             })
 
     if not tables:
@@ -459,13 +534,101 @@ def api_save():
     return jsonify({"saved": saved})
 
 
+_NUMBER_RE = re.compile(r"-?(0|[1-9]\d*)(\.\d+)?")
+_SHEET_BAD_CHARS = re.compile(r"[\[\]:*?/\\]")
+_TIMESTAMP_PREFIX = re.compile(r"^\d{8}T\d+_")
+
+
+def _cell_value(text: str):
+    """Plain numbers become real numbers (so sums work in Excel); anything
+    else -- dates like 12/03, codes like 007, words -- stays text."""
+    if _NUMBER_RE.fullmatch(text):
+        return float(text) if "." in text else int(text)
+    return text
+
+
+def _excel_workbook(records: list[dict], record_columns: list[str], scans: list[dict]) -> bytes:
+    """Build the .xlsx export: one sheet per page of each scan, plus a
+    Records sheet for the fixed-field rows. Tables from the same page are
+    stacked on that page's sheet, each under its own title and header row."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill
+
+    title_font = Font(bold=True, size=12)
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill("solid", fgColor="0B1040")
+
+    wb = Workbook()
+    wb.remove(wb.active)
+    used_names: set[str] = set()
+
+    def new_sheet(name: str):
+        name = _SHEET_BAD_CHARS.sub("-", name).strip() or "Sheet"
+        base, n = name[:31], 2
+        while name[:31].lower() in used_names:
+            suffix = f" ({n})"
+            name = base[: 31 - len(suffix)] + suffix
+            n += 1
+        used_names.add(name[:31].lower())
+        return wb.create_sheet(name[:31])
+
+    def write_row(ws, values, font=None, fill=None, numbers=False):
+        ws.append([_cell_value(v) if numbers else v for v in values])
+        for cell in ws[ws.max_row]:
+            if font:
+                cell.font = font
+            if fill:
+                cell.fill = fill
+            if isinstance(cell.value, float):
+                decimals = len(str(values[cell.column - 1]).split(".")[1])
+                cell.number_format = "0." + "0" * decimals
+
+    def fit_columns(ws):
+        widths: dict[str, int] = {}
+        for row in ws.iter_rows():
+            for cell in row:
+                if cell.value is not None:
+                    widths[cell.column_letter] = max(widths.get(cell.column_letter, 0), len(str(cell.value)))
+        for letter, width in widths.items():
+            ws.column_dimensions[letter].width = min(width + 2, 50)
+
+    if records or not scans:
+        ws = new_sheet("Records")
+        write_row(ws, record_columns, header_font, header_fill)
+        for record in records:
+            write_row(ws, [str(record[c] if record[c] is not None else "") for c in record_columns], numbers=True)
+        fit_columns(ws)
+
+    for scan in scans:
+        label = _TIMESTAMP_PREFIX.sub("", Path(scan["source_file"] or f"scan {scan['id']}").stem)
+        pages: dict[int, list[dict]] = {}
+        for table in scan["tables"]:
+            pages.setdefault(table.get("page") or 1, []).append(table)
+        for page in sorted(pages):
+            ws = new_sheet(f"Page {page}" if len(scans) == 1 else f"{label[:24]} p{page}")
+            for i, table in enumerate(pages[page]):
+                if i:
+                    ws.append([])
+                if table["title"]:
+                    write_row(ws, [table["title"]], title_font)
+                write_row(ws, table["columns"], header_font, header_fill)
+                for row in table["rows"]:
+                    write_row(ws, row, numbers=True)
+            fit_columns(ws)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
 @app.route("/export/<fmt>")
 def export(fmt: str):
-    """Download everything saved as CSV or JSON.
+    """Download everything saved as Excel, CSV or JSON.
 
     Covers both the fixed-field records and the scans saved with their own
-    headings. CSV lists the records first, then each scanned table as its own
-    block (a label line, its header row, its rows). JSON is
+    headings. Excel puts each page of each scan on its own sheet (see
+    _excel_workbook). CSV lists the records first, then each scanned table as
+    its own block (a label line, its header row, its rows). JSON is
     {"records": [...], "scans": [...]}.
 
     The download is named after the source image when everything exported
@@ -473,8 +636,8 @@ def export(fmt: str):
     (visible on the next page view, since a file download doesn't navigate
     the browser away from the current page).
     """
-    if fmt not in ("csv", "json"):
-        flash(f"Unknown export format '{fmt}'. Use 'csv' or 'json'.")
+    if fmt not in ("xlsx", "csv", "json"):
+        flash(f"Unknown export format '{fmt}'. Use 'xlsx', 'csv' or 'json'.")
         return redirect(url_for("index"))
 
     db = get_db()
@@ -505,6 +668,13 @@ def export(fmt: str):
     if len(sources) == 1:
         confirmation += f" (source: {next(iter(sources))})"
     flash(confirmation + ".")
+
+    if fmt == "xlsx":
+        return Response(
+            _excel_workbook(records, columns, scans),
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename={download_name}"},
+        )
 
     if fmt == "csv":
         buf = io.StringIO()

@@ -12,6 +12,7 @@
 <body>
   <header class="site-header">
     <nav class="nav nav-left" aria-label="Exports">
+      <a href="{{ url_for('export', fmt='xlsx') }}">Export Excel</a>
       <a href="{{ url_for('export', fmt='csv') }}">Export CSV</a>
       <a href="{{ url_for('export', fmt='json') }}">Export JSON</a>
     </nav>
@@ -44,5 +45,6 @@
     <span class="crest"><img src="{{ url_for('static', filename='logo.png') }}" alt="Chinhoyi University of Technology crest"></span>
     <p>Chinhoyi University of Technology</p>
   </footer>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>

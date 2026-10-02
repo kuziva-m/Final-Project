@@ -21,6 +21,9 @@
 
 * { box-sizing: border-box; }
 
+/* Elements styled with their own display (like .btn) must still disappear when hidden. */
+[hidden] { display: none !important; }
+
 body {
   margin: 0;
   min-height: 100vh;
@@ -240,6 +243,99 @@ input[type="file"]::file-selector-button:hover {
 }
 
 .hero-emblem .emblem [stroke] { stroke-width: 1.4; }
+
+/* Full-screen progress while a file uploads and is read */
+
+.busy {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: var(--gutter);
+  background: rgba(49, 80, 217, 0.97);
+}
+
+.busy[hidden] { display: none; }
+
+.busy-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  text-align: center;
+  width: min(100%, 30rem);
+}
+
+.busy .emblem {
+  width: 120px;
+  height: 120px;
+  margin-bottom: 0.75rem;
+}
+
+.busy .emblem [stroke] { stroke-width: 2; }
+
+.busy.is-uploading .emblem,
+.busy.is-reading .emblem { animation: spin 8s linear infinite; }
+
+.busy-title {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: clamp(1.9rem, 4vw, 2.6rem);
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+.busy-bar {
+  position: relative;
+  width: min(100%, 22rem);
+  height: 3px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.busy-bar span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  background: var(--white);
+  transition: width 0.2s ease;
+}
+
+.busy.is-reading .busy-bar span {
+  width: 35% !important;
+  transition: none;
+  animation: sweep 1.6s ease-in-out infinite;
+}
+
+.busy.is-failed .busy-bar { display: none; }
+
+.busy-detail {
+  margin: 0;
+  min-height: 1.5em;
+  color: var(--muted);
+}
+
+.busy-retry { margin-top: 0.75rem; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+@keyframes sweep {
+  from { left: -35%; }
+  to { left: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .busy.is-uploading .emblem,
+  .busy.is-reading .emblem,
+  .busy.is-reading .busy-bar span { animation: none; }
+  .busy.is-reading .busy-bar span { width: 100% !important; opacity: 0.5; }
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
 
 /* Instructions under the hero */
 

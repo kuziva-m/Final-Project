@@ -8,5 +8,6 @@ spacy
 flask
 anthropic
 pymupdf
+openpyxl
 # spaCy model (optional, for item-name NER fallback):
 #   python -m spacy download en_core_web_sm

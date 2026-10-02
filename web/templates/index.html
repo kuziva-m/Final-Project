@@ -6,7 +6,7 @@
       <h1>Digitise handwritten ledgers</h1>
       <p class="lede">Photo in. Editable table out.</p>
 
-      <form id="upload" action="{{ url_for('process') }}" method="post" enctype="multipart/form-data" class="upload-form">
+      <form id="upload" action="{{ url_for('process') }}" data-upload-url="{{ url_for('upload') }}" method="post" enctype="multipart/form-data" class="upload-form">
         <input type="file" name="image" accept="image/png,image/jpeg,.tif,.tiff,.bmp,.webp,application/pdf,.pdf" required aria-label="Ledger photo or PDF">
         <button type="submit" class="btn btn-solid">Digitise</button>
       </form>
@@ -16,6 +16,16 @@
       {% include "partials/emblem.svg" %}
     </div>
   </section>
+
+  <div class="busy" id="busy" hidden>
+    <div class="busy-inner" role="status" aria-live="polite">
+      {% include "partials/emblem.svg" %}
+      <p class="busy-title" id="busy-title">Uploading…</p>
+      <div class="busy-bar" aria-hidden="true"><span id="busy-bar-fill"></span></div>
+      <p class="busy-detail" id="busy-detail"></p>
+      <button type="button" class="btn btn-outline busy-retry" id="busy-retry" hidden>Try again</button>
+    </div>
+  </div>
 
   <section class="howto" aria-labelledby="howto-heading">
     <h2 id="howto-heading">How to use it</h2>
@@ -38,7 +48,7 @@
       <li>
         <span class="step-num">04</span>
         <h3>Save</h3>
-        <p>Save, then export CSV or JSON from the top bar.</p>
+        <p>Save, then export to Excel (one sheet per page), CSV or JSON from the top bar.</p>
       </li>
     </ol>
   </section>

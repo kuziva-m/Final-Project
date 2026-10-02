@@ -260,57 +260,29 @@ def read_rows_from_pages(image_paths: list[Path]) -> list[dict]:
     return [row for page_rows in results for row in page_rows]
 
 
-def _same_headings(a: list[str], b: list[str]) -> bool:
-    return [c.strip().lower() for c in a] == [c.strip().lower() for c in b]
-
-
-def merge_continued_tables(page_tables: list[dict], multi_page: bool) -> list[dict]:
-    """Join a table that carries on from the end of one page onto the next.
-
-    *page_tables* is in page order, each with a ``page`` number. A table is
-    joined to the one before it when it starts the very next page, has the
-    same headings, and its title is blank or the same. On multi-page
-    documents each title is labelled with the page(s) it came from.
-    """
-    merged: list[dict] = []
-    for table in page_tables:
-        prev = merged[-1] if merged else None
-        if (
-            prev is not None
-            and table["page"] == prev["pages"][-1] + 1
-            and _same_headings(prev["columns"], table["columns"])
-            and table["title"].strip().lower() in ("", prev["title"].strip().lower())
-        ):
-            prev["rows"].extend(table["rows"])
-            prev["pages"].append(table["page"])
-            continue
-        merged.append({"title": table["title"], "columns": table["columns"],
-                       "rows": list(table["rows"]), "pages": [table["page"]]})
-
-    for table in merged:
-        pages = table.pop("pages")
-        if multi_page:
-            label = f"page {pages[0]}" if len(pages) == 1 else f"pages {pages[0]}\u2013{pages[-1]}"
-            table["title"] = f"{table['title']} ({label})" if table["title"] else label.capitalize()
-    return merged
-
-
 def read_tables_from_pages(image_paths: list[Path]) -> list[dict]:
-    """Tables from every page, with continued tables joined across pages.
+    """Tables from every page, in page order, each tagged with its ``page``.
 
-    A page that fails becomes an empty table whose title says why; if every
-    page fails, the first error is raised so the caller can fall back.
+    Pages stay separate (they become separate sheets in the Excel export).
+    On multi-page documents each title is labelled with its page. A page
+    that fails becomes an empty table whose title says why; if every page
+    fails, the first error is raised so the caller can fall back.
     """
     with ThreadPoolExecutor(max_workers=_workers()) as pool:
         results = list(pool.map(lambda p: _try(read_tables, p), image_paths))
     if all(isinstance(r, ClaudeReadError) for r in results):
         raise results[0]
 
-    page_tables = []
+    multi_page = len(image_paths) > 1
+    tables = []
     for page, result in enumerate(results, start=1):
         if isinstance(result, ClaudeReadError):
-            page_tables.append({"title": f"Could not be read: {result}", "columns": ["Column 1"],
-                                "rows": [[""]], "page": page})
+            page_tables = [{"title": f"Could not be read: {result}", "columns": ["Column 1"], "rows": [[""]]}]
         else:
-            page_tables.extend({**table, "page": page} for table in result)
-    return merge_continued_tables(page_tables, multi_page=len(image_paths) > 1)
+            page_tables = result
+        for table in page_tables:
+            title = table["title"]
+            if multi_page:
+                title = f"{title} (page {page})" if title else f"Page {page}"
+            tables.append({**table, "title": title, "page": page})
+    return tables

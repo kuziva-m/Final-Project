@@ -26,6 +26,7 @@
       {% set t = loop.index0 %}
       <input type="hidden" name="num_cols_{{ t }}" value="{{ table.columns|length }}">
       <input type="hidden" name="num_rows_{{ t }}" value="{{ table.rows|length }}">
+      <input type="hidden" name="page_{{ t }}" value="{{ table.page or 1 }}">
       <input class="table-title" type="text" name="title_{{ t }}" value="{{ table.title }}" placeholder="Table {{ loop.index }}" aria-label="Title of table {{ loop.index }}">
 
       <div class="sheet">
