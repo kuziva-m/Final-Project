@@ -38,6 +38,8 @@
       {% endfor %}
     </ol>
 
+    <p class="delete-link"><a href="{{ url_for('delete_document', scan_id=scan.id) }}">{{ _("Delete this document") }}</a></p>
+
     <section class="add-page" aria-labelledby="add-page-heading">
       <h2 id="add-page-heading">{{ _("Add another page") }}</h2>
       <p>{{ _("Photographed the next page? Add it to this document.") }}</p>

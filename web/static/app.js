@@ -543,11 +543,18 @@
       input.classList.toggle("unsure", input.value.indexOf("?") !== -1);
     }
 
+    // Elements on pages not marked for deletion.
+    function live(selector) {
+      return Array.prototype.filter.call(form.querySelectorAll(selector), function (el) {
+        return !el.closest(".page.is-deleted");
+      });
+    }
+
     function updateSummary() {
-      var rows = form.querySelectorAll("tbody tr").length;
-      var unsure = form.querySelectorAll("tbody input.unsure").length;
+      var rows = live("tbody tr").length;
+      var unsure = live("tbody input.unsure").length;
       var text = [
-        count(Math.max(pages.length, 1), "1 page", "{n} pages"),
+        count(Math.max(live(".page").length, 1), "1 page", "{n} pages"),
         count(rows, "1 row", "{n} rows"),
         count(unsure, "1 cell to check", "{n} cells to check")
       ].join(" · ");
@@ -652,12 +659,97 @@
 
     Array.prototype.forEach.call(form.querySelectorAll(".sheet table"), function (table) {
       var head = table.tHead.rows[0];
+      if (tablesMode) {
+        Array.prototype.forEach.call(head.cells, function (th) { th.appendChild(columnTools()); });
+      }
       var th = document.createElement("th");
       th.className = "row-tools";
       th.setAttribute("aria-hidden", "true");
       head.appendChild(th);
       Array.prototype.forEach.call(table.tBodies[0].rows, function (row) { row.appendChild(toolsCell()); });
       updateTotals(table);
+    });
+
+    // --- Column tools: insert and delete, with undo (tables read with their own headings) ---
+
+    function columnTools() {
+      var span = document.createElement("span");
+      span.className = "col-tools";
+      span.innerHTML =
+        '<button type="button" class="col-add" title="' + T("Insert a column to the right") + '" aria-label="' + T("Insert a column to the right") + '">+</button>' +
+        '<button type="button" class="col-del" title="' + T("Delete this column") + '" aria-label="' + T("Delete this column") + '">×</button>';
+      return span;
+    }
+
+    function addColumnAfter(th) {
+      var table = tableOf(th), index = th.cellIndex;
+      var head = document.createElement("th");
+      head.scope = "col";
+      var heading = document.createElement("input");
+      heading.type = "text";
+      heading.placeholder = T("New column");
+      heading.setAttribute("aria-label", T("New column"));
+      head.appendChild(heading);
+      head.appendChild(columnTools());
+      th.parentNode.insertBefore(head, th.nextSibling);
+      Array.prototype.forEach.call(table.tBodies[0].rows, function (row) {
+        var td = document.createElement("td");
+        var input = document.createElement("input");
+        input.type = "text";
+        input.setAttribute("aria-label", T("New column"));
+        td.appendChild(input);
+        row.insertBefore(td, row.cells[index + 1]);
+      });
+      if (table.tFoot && table.tFoot.rows[0]) table.tFoot.rows[0].insertCell(index + 1);
+      heading.focus();
+      changed(table);
+    }
+
+    function deleteColumn(th) {
+      var table = tableOf(th), index = th.cellIndex;
+      if (table.tHead.rows[0].cells.length <= 2) {
+        toast(T("A table needs at least one column."));
+        return;
+      }
+      var name = th.querySelector("input").value.trim();
+      var removed = [];
+      var take = function (cell) {
+        if (!cell) return;
+        removed.push({ parent: cell.parentNode, node: cell, next: cell.nextSibling });
+        cell.parentNode.removeChild(cell);
+      };
+      take(th);
+      Array.prototype.forEach.call(table.tBodies[0].rows, function (row) { take(row.cells[index]); });
+      if (table.tFoot && table.tFoot.rows[0]) take(table.tFoot.rows[0].cells[index]);
+      changed(table);
+      toast(name ? T("Column “{name}” deleted.", { name: name }) : T("Column deleted."), [{
+        label: T("Undo"),
+        run: function () {
+          removed.forEach(function (item) { item.parent.insertBefore(item.node, item.next); });
+          changed(table);
+        }
+      }]);
+    }
+
+    // --- Delete a page (ticked pages are left out when saving) -----------------------
+
+    Array.prototype.forEach.call(form.querySelectorAll(".delete-page input"), function (box) {
+      var page = box.closest(".page");
+      page.classList.toggle("is-deleted", box.checked);
+      box.addEventListener("change", function () {
+        page.classList.toggle("is-deleted", box.checked);
+        dirty = true;
+        updateSummary();
+        if (!box.checked) return;
+        toast(T("Page {n} will be removed when you save.", { n: page.getAttribute("data-page") }), [{
+          label: T("Undo"),
+          run: function () {
+            box.checked = false;
+            page.classList.remove("is-deleted");
+            updateSummary();
+          }
+        }]);
+      });
     });
 
     // --- Copy a table ------------------------------------------------------------
@@ -735,7 +827,7 @@
 
     if (nextUnsure) {
       nextUnsure.addEventListener("click", function () {
-        var all = cells();
+        var all = live("tbody input");
         var at = all.indexOf(document.activeElement);
         var next = all.slice(at + 1).concat(all.slice(0, at + 1)).filter(function (c) { return c.classList.contains("unsure"); })[0];
         if (!next) return;
@@ -871,8 +963,12 @@
     form.addEventListener("click", function (e) {
       var add = e.target.closest(".row-add");
       var del = e.target.closest(".row-del");
+      var addCol = e.target.closest(".col-add");
+      var delCol = e.target.closest(".col-del");
       if (add) addRowAfter(add.closest("tr"));
       if (del) deleteRow(del.closest("tr"));
+      if (addCol) addColumnAfter(addCol.closest("th"));
+      if (delCol) deleteColumn(delCol.closest("th"));
     });
 
     // Enter moves down a column (Shift+Enter up) instead of saving the form.
@@ -902,6 +998,9 @@
       if (tablesMode) {
         Array.prototype.forEach.call(form.querySelectorAll(".table-block"), function (block) {
           var t = block.getAttribute("data-table");
+          var headings = block.querySelectorAll("thead input");
+          Array.prototype.forEach.call(headings, function (input, c) { input.name = "col_" + t + "_" + c; });
+          form.querySelector('input[name="num_cols_' + t + '"]').value = headings.length;
           var rows = block.querySelector("tbody").rows;
           Array.prototype.forEach.call(rows, function (row, r) {
             Array.prototype.forEach.call(row.querySelectorAll("input"), function (input, c) {

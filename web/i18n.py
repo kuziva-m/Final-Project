@@ -16,6 +16,23 @@ LANGUAGES = {"en": "English", "sn": "chiShona", "nd": "isiNdebele"}
 # fmt: off
 STRINGS: dict[str, dict[str, str]] = {
     "sn": {
+        # Deleting, columns
+        "Delete this document": "Bvisa gwaro iri",
+        "Delete document": "Bvisa gwaro",
+        "Delete “{name}”?": "Bvisa “{name}”?",
+        "This removes the document and its page photos for good. It can't be undone.":
+            "Izvi zvinobvisa gwaro nemifananidzo yemapeji acho zvachose. Hazvigoni kudzoserwa.",
+        "Keep it": "Rirege",
+        "Deleted {name}.": "{name} rabviswa.",
+        "Delete this page": "Bvisa peji iri",
+        "Page {n} will be removed when you save.": "Peji {n} richabviswa kana wachengetedza.",
+        "To remove every page, delete the document instead.": "Kuti ubvise mapeji ese, bvisa gwaro pachinzvimbo.",
+        "Insert a column to the right": "Isa koramu kurudyi",
+        "Delete this column": "Bvisa koramu iyi",
+        "New column": "Koramu itsva",
+        "A table needs at least one column.": "Tafura inoda koramu imwe chete zvichikwira.",
+        "Column “{name}” deleted.": "Koramu “{name}” yabviswa.",
+        "Column deleted.": "Koramu yabviswa.",
         # Accounts
         "Sign in": "Pinda",
         "Sign out": "Buda",
@@ -217,6 +234,23 @@ STRINGS: dict[str, dict[str, str]] = {
         "That PDF has no pages.": "PDF iyi haina mapeji.",
     },
     "nd": {
+        # Deleting, columns
+        "Delete this document": "Susa lumbhalo",
+        "Delete document": "Susa umbhalo",
+        "Delete “{name}”?": "Susa “{name}”?",
+        "This removes the document and its page photos for good. It can't be undone.":
+            "Lokhu kususa umbhalo lezithombe zamakhasi awo kuze kube nini. Akuyikubuyiselwa.",
+        "Keep it": "Wuyekele",
+        "Deleted {name}.": "Kususwe u-{name}.",
+        "Delete this page": "Susa leli khasi",
+        "Page {n} will be removed when you save.": "Ikhasi {n} lizasuswa nxa ugcina.",
+        "To remove every page, delete the document instead.": "Ukuze ususe wonke amakhasi, susa umbhalo kunalokho.",
+        "Insert a column to the right": "Faka ikholomu ngakwesokudla",
+        "Delete this column": "Susa le kholomu",
+        "New column": "Ikholomu entsha",
+        "A table needs at least one column.": "Ithebula lidinga okungenani ikholomu eyodwa.",
+        "Column “{name}” deleted.": "Ikholomu “{name}” isusiwe.",
+        "Column deleted.": "Ikholomu isusiwe.",
         # Accounts
         "Sign in": "Ngena",
         "Sign out": "Phuma",
@@ -438,6 +472,8 @@ JS_STRINGS: list[str] = [
     "Insert a row below", "Delete this row", "Row deleted.", "Undo", "Sum of rows",
     "Change the other {n} “{old}” to “{new}”?", "Change all", "Changed 1 cell.", "Changed {n} cells.",
     "Rename “{old}” in {n} other tables too?", "Rename all", "Please sign in first.",
+    "Insert a column to the right", "Delete this column", "New column", "A table needs at least one column.",
+    "Column “{name}” deleted.", "Column deleted.", "Page {n} will be removed when you save.",
     "Copied. Paste it into WhatsApp, Excel or an email.", "Could not copy. Select the table and copy it by hand.",
 ]
 

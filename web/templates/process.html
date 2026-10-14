@@ -91,7 +91,12 @@
 
       {% for group in groups %}
       <section class="page" id="page-{{ group.page }}" data-page="{{ group.page }}">
-        {% if groups|length > 1 %}<h2 class="page-heading">{{ _("Page {n}", n=group.page) }}</h2>{% endif %}
+        {% if groups|length > 1 %}
+        <div class="page-head">
+          <h2 class="page-heading">{{ _("Page {n}", n=group.page) }}</h2>
+          <label class="delete-page"><input type="checkbox" name="delete_page_{{ group.page }}" value="1"> {{ _("Delete this page") }}</label>
+        </div>
+        {% endif %}
         <div class="page-grid{% if not group.image %} no-photo{% endif %}">
           {% if group.image %}{{ viewer(group.image, _("Photo of page {n}", n=group.page)) }}{% endif %}
 

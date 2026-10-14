@@ -50,6 +50,7 @@ class Backup:
         self.can_push = False
         self.remote_images: set[str] = set()
         self._pending_images: dict[str, Path] = {}
+        self._deleted_images: set[str] = set()
         self._dirty = False
         self._lock = threading.Lock()
         self._push_lock = threading.Lock()
@@ -128,6 +129,17 @@ class Backup:
                 if path.name not in self.remote_images:
                     self._pending_images[path.name] = path
 
+    def forget_images(self, names: set[str]) -> None:
+        """Remove photos of deleted pages and documents from the backup too."""
+        if not self.enabled or not names:
+            return
+        with self._lock:
+            for name in names:
+                self._pending_images.pop(name, None)
+                if name in self.remote_images:
+                    self._deleted_images.add(name)
+            self._dirty = True
+
     def has_image(self, name: str) -> bool:
         return name in self.remote_images or name in self._pending_images
 
@@ -149,7 +161,7 @@ class Backup:
         """Upload a snapshot of the database and any new photos. True if pushed."""
         if not (self.enabled and self.can_push and self._db_path):
             return False
-        from huggingface_hub import CommitOperationAdd
+        from huggingface_hub import CommitOperationAdd, CommitOperationDelete
 
         with self._push_lock:
             with self._lock:
@@ -157,6 +169,7 @@ class Backup:
                     return False
                 self._dirty = False
                 images = dict(self._pending_images)
+                deleted = set(self._deleted_images)
             try:
                 with tempfile.TemporaryDirectory() as tmp:
                     snapshot = Path(tmp) / DB_NAME
@@ -169,6 +182,7 @@ class Backup:
                         CommitOperationAdd(path_in_repo=IMAGES + name, path_or_fileobj=str(path))
                         for name, path in images.items() if path.is_file()
                     ]
+                    operations += [CommitOperationDelete(path_in_repo=IMAGES + name) for name in sorted(deleted)]
                     self.api.create_commit(self.repo_id, operations, repo_type="dataset",
                                            commit_message="Back up saved documents")
             except Exception as exc:
@@ -180,6 +194,9 @@ class Backup:
                 for name in images:
                     self._pending_images.pop(name, None)
                     self.remote_images.add(name)
+                for name in deleted:
+                    self._deleted_images.discard(name)
+                    self.remote_images.discard(name)
             self._pushes += 1
             if self._pushes % _SQUASH_EVERY == 0:
                 try:

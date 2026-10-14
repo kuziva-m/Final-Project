@@ -1019,8 +1019,13 @@ def save_tables():
     editing = _load_scan(_form_int("scan_id", _MAX_ID)) if request.form.get("scan_id") else None
     adding_to = _load_scan(_form_int("append_to", _MAX_ID)) if request.form.get("append_to") else None
 
+    # Pages ticked "Delete this page" are left out.
+    deleted_pages = {int(key[len("delete_page_"):]) for key in request.form
+                     if key.startswith("delete_page_") and key[len("delete_page_"):].isdigit()}
     tables = []
     for t in range(_form_int("num_tables", _MAX_TABLES)):
+        if (_form_int(f"page_{t}", _MAX_PAGE) or 1) in deleted_pages:
+            continue
         n_cols = _form_int(f"num_cols_{t}", _MAX_COLS)
         n_rows = _form_int(f"num_rows_{t}", _MAX_ROWS)
         columns = [request.form.get(f"col_{t}_{c}", "").strip() for c in range(n_cols)]
@@ -1041,8 +1046,16 @@ def save_tables():
 
     target = editing or adding_to
     if not tables:
+        if deleted_pages and editing:
+            flash(tr("To remove every page, delete the document instead."))
+            return redirect(url_for("delete_document", scan_id=editing["id"]))
         flash(tr("Nothing to save: every row was empty."))
         return redirect(url_for("document", scan_id=target["id"]) if target else url_for("index"))
+
+    # Number the remaining pages 1, 2, 3... again, in their order.
+    renumbered = {page: n for n, page in enumerate(sorted({t["page"] for t in tables}), start=1)}
+    for table in tables:
+        table["page"] = renumbered[table["page"]]
 
     db = get_db()
     now = datetime.now(timezone.utc).isoformat()
@@ -1050,6 +1063,7 @@ def save_tables():
     if editing:
         db.execute("UPDATE scans SET name = ?, tables_json = ?, updated_at = ? WHERE id = ?",
                    (name, json.dumps(tables, ensure_ascii=False), now, editing["id"]))
+        _remove_photos(_photo_names(editing["tables"]) - _photo_names(tables))
         scan_id = editing["id"]
         message = tr("Saved your changes: {rows} row(s) in {tables} table(s).", rows=n_rows, tables=len(tables))
     elif adding_to:
@@ -1108,6 +1122,40 @@ def document(scan_id: int):
         names=_known_names(),
         max_pdf_pages=MAX_PDF_PAGES,
     )
+
+
+def _photo_names(tables: list[dict]) -> set[str]:
+    """Page photos and thumbnails that *tables* use."""
+    names = {t["image"] for t in tables if t.get("image")}
+    return names | {name[: -len("_view.jpg")] + "_thumb.jpg" for name in names if name.endswith("_view.jpg")}
+
+
+def _remove_photos(names: set[str]) -> None:
+    """Delete page photos no longer used by any of the user's documents, here and in the backup."""
+    still_used = set().union(*(_photo_names(scan["tables"]) for scan in _user_scans())) if names else set()
+    unused = {name for name in names - still_used if secure_filename(name) == name}
+    for name in unused:
+        (PROCESSED_DIR / name).unlink(missing_ok=True)
+    backup.forget_images(unused)
+
+
+@app.route("/documents/<int:scan_id>/delete", methods=["GET", "POST"])
+def delete_document(scan_id: int):
+    """Ask, then delete a saved document and its page photos."""
+    scan = _load_scan(scan_id)
+    if scan is None:
+        flash(tr("That document could not be found."))
+        return redirect(url_for("index"))
+    label = document_label(scan)
+    if request.method == "GET":
+        return render_template("delete.html", scan=scan, summary=_scan_summary(scan))
+    db = get_db()
+    db.execute("DELETE FROM scans WHERE id = ? AND user_id = ?", (scan_id, g.user["id"]))
+    db.commit()
+    _remove_photos(_photo_names(scan["tables"]))
+    backup.mark_dirty()
+    flash(tr("Deleted {name}.", name=label))
+    return redirect(url_for("documents"))
 
 
 @app.route("/documents/<int:scan_id>/edit")

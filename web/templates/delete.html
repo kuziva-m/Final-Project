@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}{{ _("Delete document") }} · MSME Ledger{% endblock %}
+{% block content %}
+  <section class="doc">
+    <h1>{{ _("Delete “{name}”?", name=summary.label) }}</h1>
+    <p class="meta">{{ summary.date }} · {{ _("1 page") if summary.pages == 1 else _("{n} pages", n=summary.pages) }} · {{ _("1 row") if summary.rows == 1 else _("{n} rows", n=summary.rows) }}</p>
+    <p>{{ _("This removes the document and its page photos for good. It can't be undone.") }}</p>
+    <form method="post" action="{{ url_for('delete_document', scan_id=scan.id) }}" class="doc-actions">
+      <button type="submit" class="btn btn-danger">{{ _("Delete document") }}</button>
+      <a class="btn btn-outline" href="{{ url_for('document', scan_id=scan.id) }}">{{ _("Keep it") }}</a>
+    </form>
+  </section>
+{% endblock %}
