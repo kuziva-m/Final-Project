@@ -44,6 +44,7 @@
     };
     xhr.onerror = function () { done(null, 0); };
     xhr.open("GET", url);
+    xhr.setRequestHeader("X-Requested-With", "XMLHttpRequest");
     xhr.send();
   }
 
@@ -382,6 +383,7 @@
         getJSON(url, function (progress, status) {
           if (finished || busy.classList.contains("is-failed")) return;
           if (!progress) return; // network blip: try again next time
+          if (status === 401) return fail(progress.error || T("Please sign in first."));
           if (progress.stage === "done" && progress.review_url) return finish(progress.review_url);
           if (progress.stage === "error") return fail(progress.error || T("The server hit an error while reading this file."));
           if (status === 404 || progress.stage === "unknown") {
@@ -446,6 +448,7 @@
       if (nameInput) body.append("name", nameInput.value.trim());
       if (appendInput) body.append("append_to", appendInput.value);
       xhr.open("POST", form.action);
+      xhr.setRequestHeader("X-Requested-With", "XMLHttpRequest");
       xhr.send(body);
     }
 
@@ -489,6 +492,7 @@
         fail(T("The connection dropped while uploading. Check your connection and try again."));
       };
       xhr.open("POST", form.getAttribute("data-upload-url"));
+      xhr.setRequestHeader("X-Requested-With", "XMLHttpRequest");
       var data = new FormData();
       data.append("image", file);
       xhr.send(data);

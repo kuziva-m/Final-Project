@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}{{ _("My documents") }} · MSME Ledger{% endblock %}
+{% block body_class %}page-documents{% endblock %}
+{% block content %}
+  <section class="doc">
+    <h1>{{ _("My documents") }}</h1>
+    {% if documents %}
+    <p class="meta">{{ _("1 document") if documents|length == 1 else _("{n} documents", n=documents|length) }}</p>
+    <ul class="doc-list">
+      {% for doc in documents %}
+      <li>
+        <a href="{{ url_for('document', scan_id=doc.id) }}">
+          <span class="doc-name">{{ doc.label }}</span>
+          <span class="doc-meta">{{ doc.date }} · {{ _("1 page") if doc.pages == 1 else _("{n} pages", n=doc.pages) }} · {{ _("1 row") if doc.rows == 1 else _("{n} rows", n=doc.rows) }}</span>
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+    <p class="more-downloads">
+      {{ _("Download everything:") }}
+      <a href="{{ url_for('export', fmt='xlsx') }}" download>Excel</a> ·
+      <a href="{{ url_for('export', fmt='csv') }}" download>CSV</a> ·
+      <a href="{{ url_for('export', fmt='json') }}" download>JSON</a>
+    </p>
+    {% else %}
+    <p class="meta">{{ _("Nothing saved yet. Scan a ledger page to get started.") }}</p>
+    <a class="btn btn-solid" href="{{ url_for('index') }}#upload">{{ _("Scan a ledger") }}</a>
+    {% endif %}
+  </section>
+{% endblock %}

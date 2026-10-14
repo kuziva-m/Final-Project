@@ -21,6 +21,11 @@ used. The engine that produced the rows is always reported as used_engine.
 Documents read with their own headings are saved in the scans table and get
 their own page (/documents/<id>) to download, share, edit or add pages to.
 
+Scanning needs an account: every upload, document and record belongs to the
+user who made it, and no one else can see it. On a Hugging Face Space the
+database is backed up to a private dataset (web/backup.py), since the
+Space's own disk is wiped whenever it restarts.
+
 Run:
     python -m web.app
     (or) python web/app.py
@@ -29,15 +34,19 @@ Run:
 from __future__ import annotations
 
 import csv
+import hmac
 import io
 import json
+import logging
 import os
 import re
+import secrets
+import signal
 import sqlite3
 import sys
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 # Allow `python web/app.py` to find the top-level packages (preprocessing,
@@ -58,9 +67,12 @@ from flask import (
     request,
     send_file,
     send_from_directory,
+    session,
     url_for,
 )
+from itsdangerous import BadSignature, URLSafeTimedSerializer
 from werkzeug.exceptions import RequestEntityTooLarge
+from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
 from extraction.fields import FIELDNAMES
@@ -68,6 +80,7 @@ from ocr import claude_reader
 from ocr.fusion import fuse_from_texts, run_engines
 from preprocessing.clean import preprocess
 from preprocessing.pdf_pages import PdfError, render_pages
+from web.backup import Backup
 from web.exports import build_workbook, document_label
 from web.i18n import JS_STRINGS, LANGUAGES, translate
 
@@ -91,7 +104,20 @@ app.config["MAX_CONTENT_LENGTH"] = int(os.environ.get("LEDGER_MAX_UPLOAD_MB", "1
 # Flask's 500 KB default for submitted form fields is too small for a review
 # page holding many pages of tables.
 app.config["MAX_FORM_MEMORY_SIZE"] = 16 * 1024 * 1024
-app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret-key-change-in-production")
+# The session cookie says who is signed in, so its signing key must be secret.
+# Without FLASK_SECRET_KEY a random key is made, which signs everyone out
+# whenever the server restarts.
+app.secret_key = os.environ.get("FLASK_SECRET_KEY") or secrets.token_hex(32)
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    # Not sent with requests from other sites, so they can't post forms as you.
+    SESSION_COOKIE_SAMESITE="Lax",
+    # A Space is served over HTTPS (SPACE_ID is set by Hugging Face).
+    SESSION_COOKIE_SECURE=bool(os.environ.get("SPACE_ID")),
+    PERMANENT_SESSION_LIFETIME=timedelta(days=30),
+)
+logging.basicConfig(level=logging.INFO)
+backup = Backup.from_environment()
 
 
 # ---------------------------------------------------------------------------
@@ -127,6 +153,10 @@ def inject_language() -> dict:
 def init_db() -> None:
     """Create the tables if they do not already exist.
 
+    users   -- accounts: email, password hash, and a session key that signs
+               out every device when changed.
+    uploads -- which user each upload belongs to, by the time stamp that
+               starts all of its file names.
     records -- fixed date/item/qty/price/total rows (OCR fusion, mobile app).
     scans   -- documents read with their own headings; tables_json holds
                [{"title", "columns", "rows", "page", "image"}], since columns
@@ -158,11 +188,33 @@ def init_db() -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                email         TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
+                session_key   TEXT NOT NULL,
+                created_at    TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS uploads (
+                stamp       TEXT PRIMARY KEY,
+                user_id     INTEGER NOT NULL,
+                created_at  TEXT NOT NULL
+            )
+            """
+        )
         # Columns added after the first release; older databases get them here.
-        existing = {row[1] for row in conn.execute("PRAGMA table_info(scans)")}
-        for column in ("name", "updated_at"):
-            if column not in existing:
-                conn.execute(f"ALTER TABLE scans ADD COLUMN {column} TEXT")
+        for table, columns in (("scans", ("name TEXT", "updated_at TEXT", "user_id INTEGER")),
+                               ("records", ("user_id INTEGER",))):
+            existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+            for column in columns:
+                if column.split()[0] not in existing:
+                    conn.execute(f"ALTER TABLE {table} ADD COLUMN {column}")
         conn.commit()
 
 
@@ -182,6 +234,182 @@ def close_db(_exc: BaseException | None) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Accounts -- scanning needs a signed-in user, and everyone sees only their own
+# uploads, documents and records. The web pages use the session cookie; the
+# phone app gets a token from /api/login and sends it as "Authorization:
+# Bearer <token>".
+# ---------------------------------------------------------------------------
+
+_EMAIL = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
+_MIN_PASSWORD = 8
+_api_tokens = URLSafeTimedSerializer(app.secret_key, salt="ledger-api")
+_API_TOKEN_DAYS = 30
+
+# Pages anyone can open; everything else needs a signed-in user.
+_PUBLIC_ENDPOINTS = {"index", "login", "signup", "logout", "set_language", "static", "api_health", "api_login"}
+
+# Repeated wrong passwords for one email are refused for a while.
+_failed_logins: dict[str, list[float]] = {}
+_failed_lock = threading.Lock()
+_MAX_FAILURES, _FAILURE_WINDOW = 10, 15 * 60
+
+
+def _signup_code() -> str:
+    """When LEDGER_SIGNUP_CODE is set, creating an account needs it."""
+    return os.environ.get("LEDGER_SIGNUP_CODE", "").strip()
+
+
+def _too_many_failures(email: str) -> bool:
+    now = time.time()
+    with _failed_lock:
+        recent = [t for t in _failed_logins.get(email, []) if now - t < _FAILURE_WINDOW]
+        _failed_logins[email] = recent
+        return len(recent) >= _MAX_FAILURES
+
+
+def _record_failure(email: str) -> None:
+    with _failed_lock:
+        _failed_logins.setdefault(email, []).append(time.time())
+
+
+def _check_login(email: str, password: str) -> tuple[sqlite3.Row | None, str | None]:
+    """The user for *email* and *password*, or ``(None, message)``."""
+    email = email.strip().lower()
+    if _too_many_failures(email):
+        return None, tr("Too many wrong passwords. Wait 15 minutes and try again.")
+    user = get_db().execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+    if user is None or not check_password_hash(user["password_hash"], password):
+        _record_failure(email)
+        return None, tr("That email and password don't match an account.")
+    with _failed_lock:
+        _failed_logins.pop(email, None)
+    return user, None
+
+
+def _user_from_request() -> dict | None:
+    """The signed-in user from the session cookie or an API token."""
+    uid, key = session.get("uid"), session.get("key")
+    auth = request.headers.get("Authorization", "")
+    if uid is None and auth.startswith("Bearer "):
+        try:
+            data = _api_tokens.loads(auth[len("Bearer "):], max_age=_API_TOKEN_DAYS * 24 * 3600)
+            uid, key = data.get("uid"), data.get("key")
+        except (BadSignature, AttributeError):
+            return None
+    if uid is None or not key:
+        return None
+    # The session key also guards against a stale cookie meeting a reused id.
+    row = get_db().execute("SELECT id, email, session_key FROM users WHERE id = ?", (uid,)).fetchone()
+    if row is None or not hmac.compare_digest(row["session_key"], str(key)):
+        return None
+    return {"id": row["id"], "email": row["email"]}
+
+
+def _wants_json() -> bool:
+    return (request.path.startswith("/api/") or request.endpoint in ("upload", "progress")
+            or request.headers.get("X-Requested-With") == "XMLHttpRequest")
+
+
+@app.before_request
+def require_sign_in():
+    g.user = _user_from_request()
+    if g.user is not None or request.endpoint is None or request.endpoint in _PUBLIC_ENDPOINTS:
+        return None
+    if _wants_json():
+        return jsonify({"error": tr("Please sign in first.")}), 401
+    flash(tr("Please sign in to continue."))
+    target = request.full_path.rstrip("?") if request.method == "GET" else url_for("index")
+    return redirect(url_for("login", next=target))
+
+
+@app.context_processor
+def inject_user() -> dict:
+    return {"user": g.get("user")}
+
+
+def _safe_target(target: str | None) -> str:
+    """*target* if it is a path on this site, else the home page."""
+    if not target or not target.startswith("/") or target.startswith("//") or "\\" in target:
+        return url_for("index")
+    return target
+
+
+def _sign_in(user: sqlite3.Row):
+    session.clear()
+    session.permanent = True
+    session["uid"], session["key"] = user["id"], user["session_key"]
+
+
+@app.route("/signup", methods=["GET", "POST"])
+def signup():
+    """Create an account (with the sign-up code, when one is set)."""
+    if g.user:
+        return redirect(url_for("index"))
+    email = request.form.get("email", "").strip().lower()
+    if request.method == "POST":
+        password = request.form.get("password", "")
+        code = _signup_code()
+        error = None
+        if not _EMAIL.fullmatch(email) or len(email) > 254:
+            error = tr("Enter a valid email address.")
+        elif len(password) < _MIN_PASSWORD:
+            error = tr("Use a password of at least {n} characters.", n=_MIN_PASSWORD)
+        elif code and not hmac.compare_digest(request.form.get("code", "").strip(), code):
+            error = tr("That sign-up code isn't right. Ask the app's owner for it.")
+        else:
+            db = get_db()
+            try:
+                db.execute(
+                    "INSERT INTO users (email, password_hash, session_key, created_at) VALUES (?, ?, ?, ?)",
+                    (email, generate_password_hash(password), secrets.token_hex(16),
+                     datetime.now(timezone.utc).isoformat()),
+                )
+                db.commit()
+            except sqlite3.IntegrityError:
+                error = tr("There is already an account with that email. Sign in instead.")
+        if error:
+            flash(error)
+        else:
+            backup.mark_dirty()
+            _sign_in(db.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone())
+            flash(tr("Welcome! Your account is ready, and everything you save is kept in it."))
+            return redirect(_safe_target(request.args.get("next")))
+    return render_template("auth.html", mode="signup", email=email, code_required=bool(_signup_code()))
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if g.user:
+        return redirect(_safe_target(request.args.get("next")))
+    email = request.form.get("email", "").strip().lower()
+    if request.method == "POST":
+        user, error = _check_login(email, request.form.get("password", ""))
+        if user is not None:
+            _sign_in(user)
+            return redirect(_safe_target(request.args.get("next")))
+        flash(error)
+    return render_template("auth.html", mode="login", email=email, code_required=False)
+
+
+@app.route("/logout", methods=["POST"])
+def logout():
+    session.clear()
+    flash(tr("You're signed out."))
+    return redirect(url_for("index"))
+
+
+@app.route("/api/login", methods=["POST"])
+def api_login():
+    """For the phone app: ``{email, password}`` -> ``{"token": ...}`` for API calls."""
+    body = request.get_json(silent=True) or {}
+    user, error = _check_login(str(body.get("email", "")), str(body.get("password", "")))
+    if user is None:
+        return jsonify({"error": error}), 401
+    token = _api_tokens.dumps({"uid": user["id"], "key": user["session_key"]})
+    return jsonify({"token": token, "email": user["email"]})
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -191,11 +419,26 @@ def _allowed_file(filename: str) -> bool:
 
 
 def _unique_stem(original_filename: str) -> str:
-    """Timestamp-prefixed, path-safe stem so repeat uploads never collide."""
+    """Stamp-prefixed, path-safe stem so repeat uploads never collide.
+
+    The stamp (time plus random digits) starts every file made from the
+    upload, and records who owns them (see _owns_file)."""
     safe_name = secure_filename(original_filename)
     stem = Path(safe_name).stem or "upload"
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")
-    return f"{timestamp}_{stem}"
+    return f"{timestamp}{secrets.randbelow(10**6):06d}_{stem}"
+
+
+_STAMP = re.compile(r"^(\d{8}T\d+)_")
+
+
+def _owns_file(name: str) -> bool:
+    """Whether the signed-in user made the upload that file *name* came from."""
+    match = _STAMP.match(name or "")
+    if not match or g.get("user") is None:
+        return False
+    row = get_db().execute("SELECT user_id FROM uploads WHERE stamp = ?", (match.group(1),)).fetchone()
+    return row is not None and row["user_id"] == g.user["id"]
 
 
 def _env_int(name: str, default: int) -> int:
@@ -232,13 +475,17 @@ def _save_upload(upload) -> tuple[Path | None, str | None]:
     ext = Path(secure_filename(upload.filename)).suffix.lower()
     source_path = UPLOADS_DIR / f"{stem}{ext}"
     upload.save(str(source_path))
+    db = get_db()
+    db.execute("INSERT INTO uploads (stamp, user_id, created_at) VALUES (?, ?, ?)",
+               (_STAMP.match(stem).group(1), g.user["id"], datetime.now(timezone.utc).isoformat()))
+    db.commit()
     return source_path, None
 
 
 def _uploaded_path(token: str) -> Path | None:
-    """The saved upload named by *token* (from /upload), or None if invalid."""
+    """The signed-in user's saved upload named by *token* (from /upload), or None."""
     name = secure_filename(token or "")
-    if not name or name != token or not _allowed_file(name):
+    if not name or name != token or not _allowed_file(name) or not _owns_file(name):
         return None
     path = UPLOADS_DIR / name
     return path if path.is_file() else None
@@ -269,7 +516,7 @@ def _page_images(page_path: Path) -> dict:
 def _thumb_for(view_name: str | None) -> str | None:
     if view_name and view_name.endswith("_view.jpg"):
         thumb = view_name[: -len("_view.jpg")] + "_thumb.jpg"
-        if (PROCESSED_DIR / thumb).is_file():
+        if (PROCESSED_DIR / thumb).is_file() or backup.has_image(thumb):
             return thumb
     return None
 
@@ -431,7 +678,7 @@ def _run_pipeline_on_file(source_path: Path, detect_tables: bool = False,
 
 
 def _save_rows(source_file: str, rows: list[dict]) -> int:
-    """Insert non-blank *rows* into SQLite under *source_file*; return count saved."""
+    """Insert the signed-in user's non-blank *rows* under *source_file*; return count saved."""
     created_at = datetime.now(timezone.utc).isoformat()
     db = get_db()
     saved = 0
@@ -441,13 +688,14 @@ def _save_rows(source_file: str, rows: list[dict]) -> int:
             continue  # skip fully-blank rows (e.g. an unused manual-entry row)
         db.execute(
             """
-            INSERT INTO records (date, item, qty, price, total, source_file, created_at)
-            VALUES (:date, :item, :qty, :price, :total, :source_file, :created_at)
+            INSERT INTO records (date, item, qty, price, total, source_file, created_at, user_id)
+            VALUES (:date, :item, :qty, :price, :total, :source_file, :created_at, :user_id)
             """,
-            {**clean, "source_file": source_file, "created_at": created_at},
+            {**clean, "source_file": source_file, "created_at": created_at, "user_id": g.user["id"]},
         )
         saved += 1
     db.commit()
+    backup.mark_dirty()
     return saved
 
 
@@ -482,8 +730,21 @@ _SCAN_COLUMNS = "id, name, source_file, engine, tables_json, created_at, updated
 
 
 def _load_scan(scan_id: int) -> dict | None:
-    row = get_db().execute(f"SELECT {_SCAN_COLUMNS} FROM scans WHERE id = ?", (scan_id,)).fetchone()
+    """The signed-in user's document *scan_id*, or None (also for anyone else's)."""
+    row = get_db().execute(f"SELECT {_SCAN_COLUMNS} FROM scans WHERE id = ? AND user_id = ?",
+                           (scan_id, g.user["id"])).fetchone()
     return _scan_dict(row) if row else None
+
+
+def _user_scans(limit: int | None = None) -> list[dict]:
+    """The signed-in user's documents, most recently changed first."""
+    sql = (f"SELECT {_SCAN_COLUMNS} FROM scans WHERE user_id = ? "
+           "ORDER BY COALESCE(updated_at, created_at) DESC, id DESC")
+    params: tuple = (g.user["id"],)
+    if limit:
+        sql += " LIMIT ?"
+        params += (limit,)
+    return [_scan_dict(row) for row in get_db().execute(sql, params)]
 
 
 def _nice_date(iso: str | None) -> str:
@@ -509,8 +770,8 @@ def _scan_summary(scan: dict) -> dict:
 def _known_names() -> list[str]:
     """Document names used before, newest first (suggested when naming a new one)."""
     rows = get_db().execute(
-        "SELECT name, MAX(id) AS newest FROM scans WHERE name IS NOT NULL AND name != '' "
-        "GROUP BY name ORDER BY newest DESC LIMIT 30"
+        "SELECT name, MAX(id) AS newest FROM scans WHERE user_id = ? AND name IS NOT NULL AND name != '' "
+        "GROUP BY name ORDER BY newest DESC LIMIT 30", (g.user["id"],)
     )
     return [row["name"] for row in rows]
 
@@ -522,30 +783,34 @@ def _known_names() -> list[str]:
 
 @app.route("/")
 def index():
-    """Upload form, plus the most recently saved documents to reopen."""
-    recent = [
-        _scan_summary(_scan_dict(row))
-        for row in get_db().execute(
-            f"SELECT {_SCAN_COLUMNS} FROM scans ORDER BY COALESCE(updated_at, created_at) DESC, id DESC LIMIT 5"
-        )
-    ]
-    return render_template("index.html", recent=recent, names=_known_names(), max_pdf_pages=MAX_PDF_PAGES)
+    """Upload form and recent documents; for visitors, a way to sign in."""
+    if g.user is None:
+        return render_template("index.html", recent=[], names=[], total_documents=0, max_pdf_pages=MAX_PDF_PAGES)
+    total = get_db().execute("SELECT COUNT(*) FROM scans WHERE user_id = ?", (g.user["id"],)).fetchone()[0]
+    recent = [_scan_summary(scan) for scan in _user_scans(limit=5)]
+    return render_template("index.html", recent=recent, names=_known_names(), total_documents=total,
+                           max_pdf_pages=MAX_PDF_PAGES)
+
+
+@app.route("/documents")
+def documents():
+    """Every document the signed-in user has saved."""
+    return render_template("documents.html", documents=[_scan_summary(scan) for scan in _user_scans()])
 
 
 @app.route("/lang/<code>")
 def set_language(code: str):
     """Switch the interface language, then go back to the page it was chosen on."""
-    target = request.args.get("next", "")
-    if not target.startswith("/") or target.startswith("//") or "\\" in target:
-        target = url_for("index")
-    response = redirect(target)
+    response = redirect(_safe_target(request.args.get("next")))
     if code in LANGUAGES:
         response.set_cookie("lang", code, max_age=365 * 24 * 3600, samesite="Lax")
     return response
 
 
 def _image_url(name: str | None) -> str | None:
-    if name and secure_filename(name) == name and (PROCESSED_DIR / name).is_file():
+    """Address of one of the signed-in user's page photos, if it exists (here or in the backup)."""
+    if (name and secure_filename(name) == name and _owns_file(name)
+            and ((PROCESSED_DIR / name).is_file() or backup.has_image(name))):
         return url_for("processed_file", filename=name)
     return None
 
@@ -607,9 +872,9 @@ def _render_review(artifacts: dict, scan: dict | None = None):
 
 
 def _review_path(token: str) -> Path | None:
-    """Where the read result for upload *token* is kept, or None if invalid."""
+    """Where the read result for the signed-in user's upload *token* is kept, or None."""
     name = secure_filename(token or "")
-    if not name or name != token:
+    if not name or name != token or not _owns_file(name):
         return None
     return PROCESSED_DIR / f"{name}.review.json"
 
@@ -666,6 +931,8 @@ def process():
 @app.route("/progress/<token>")
 def progress(token: str):
     """How far the read of upload *token* has got: stage, pages done, thumbnails."""
+    if not _owns_file(token):
+        return jsonify({"stage": "unknown"}), 404
     with _progress_lock:
         entry = _progress.get(token)
         entry = {**entry, "done": set(entry["done"])} if entry else None
@@ -798,13 +1065,17 @@ def save_tables():
                      name=name or document_label(adding_to))
     else:
         cursor = db.execute(
-            "INSERT INTO scans (name, source_file, engine, tables_json, created_at) VALUES (?, ?, ?, ?, ?)",
-            (name, source_file, engine, json.dumps(tables, ensure_ascii=False), now),
+            "INSERT INTO scans (name, source_file, engine, tables_json, created_at, user_id) VALUES (?, ?, ?, ?, ?, ?)",
+            (name, source_file, engine, json.dumps(tables, ensure_ascii=False), now, g.user["id"]),
         )
         scan_id = cursor.lastrowid
         message = tr("Saved {rows} row(s) in {tables} table(s) from {source}.",
                      rows=n_rows, tables=len(tables), source=name or source_file or tr("upload"))
     db.commit()
+    # Keep the database and these pages' photos in the backup.
+    photos = [PROCESSED_DIR / t["image"] for t in tables if t["image"]]
+    photos += [PROCESSED_DIR / thumb for t in tables if (thumb := _thumb_for(t["image"]))]
+    backup.mark_dirty(photos)
 
     flash(message)
     return redirect(url_for("document", scan_id=scan_id, saved=1))
@@ -955,7 +1226,7 @@ def _download(fmt: str, records: list[dict], columns: list[str], scans: list[dic
 
 @app.route("/export/<fmt>")
 def export(fmt: str):
-    """Download everything saved as Excel, CSV or JSON.
+    """Download everything the signed-in user has saved, as Excel, CSV or JSON.
 
     Covers both the fixed-field records and the scans saved with their own
     headings. Excel puts each page of each scan on its own sheet, with an
@@ -968,8 +1239,10 @@ def export(fmt: str):
         return redirect(url_for("index"))
 
     db = get_db()
-    records = [dict(row) for row in db.execute(f"SELECT {', '.join(_RECORD_COLUMNS)} FROM records ORDER BY id")]
-    scans = [_scan_dict(row) for row in db.execute(f"SELECT {_SCAN_COLUMNS} FROM scans ORDER BY id")]
+    records = [dict(row) for row in db.execute(
+        f"SELECT {', '.join(_RECORD_COLUMNS)} FROM records WHERE user_id = ? ORDER BY id", (g.user["id"],))]
+    scans = [_scan_dict(row) for row in db.execute(
+        f"SELECT {_SCAN_COLUMNS} FROM scans WHERE user_id = ? ORDER BY id", (g.user["id"],))]
 
     stem = _download_stem(document_label(scans[0])) if len(scans) == 1 and not records else _download_stem("MSME Ledger")
     n_rows = len(records) + sum(len(t["rows"]) for s in scans for t in s["tables"])
@@ -979,17 +1252,35 @@ def export(fmt: str):
 
 @app.route("/uploads/<path:filename>")
 def uploaded_file(filename: str):
-    """Serve a raw upload for preview in the /process page."""
+    """Serve one of the signed-in user's raw uploads (for previews)."""
+    if not _owns_file(filename):
+        return jsonify({"error": "Not found."}), 404
     return send_from_directory(str(UPLOADS_DIR), filename)
 
 
 @app.route("/processed/<path:filename>")
 def processed_file(filename: str):
-    """Serve a preprocessed image for preview in the /process page."""
+    """Serve one of the signed-in user's page photos or straightened images.
+
+    Photos of saved documents come back from the backup after a restart."""
+    if not _owns_file(filename):
+        return jsonify({"error": "Not found."}), 404
+    if not (PROCESSED_DIR / filename).is_file() and secure_filename(filename) == filename:
+        backup.fetch_image(filename, PROCESSED_DIR)
     return send_from_directory(str(PROCESSED_DIR), filename)
 
 
+# Bring saved data back after a restart, then keep backing it up.
+backup.restore(DB_PATH)
 init_db()
+backup.start()
+if backup.enabled and threading.current_thread() is threading.main_thread():
+    def _push_and_exit(_signum, _frame):
+        # One last push when the Space is stopped or replaced by a new version.
+        backup.push()
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, _push_and_exit)
 
 
 if __name__ == "__main__":

@@ -560,7 +560,9 @@ td input[type="text"]:focus {
   color: var(--muted);
 }
 
-.field input[type="text"] {
+.field input[type="text"],
+.field input[type="email"],
+.field input[type="password"] {
   padding: 0.7rem 0;
   border: 0;
   border-bottom: 1.5px solid var(--line);
@@ -570,9 +572,11 @@ td input[type="text"]:focus {
   font-size: 1.05rem;
 }
 
-.field input[type="text"]::placeholder { color: rgba(255, 255, 255, 0.55); }
+.field input::placeholder { color: rgba(255, 255, 255, 0.55); }
 
-.field input[type="text"]:focus {
+.field-hint { font-size: 0.88rem; color: var(--muted); }
+
+.field input:focus {
   outline: none;
   border-bottom-color: var(--gold);
 }
@@ -1112,6 +1116,76 @@ tfoot td.total-label {
 .add-page > p { margin: 0 0 0.5rem; color: var(--muted); }
 .add-page .upload-form { margin-top: 1.25rem; }
 
+
+/* ---------------------------------------------------------------------- */
+/* Accounts                                                                 */
+/* ---------------------------------------------------------------------- */
+
+.account {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem 0.9rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  font-size: 0.92rem;
+}
+
+.account-email {
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+.account form { margin: 0; }
+.account .link-button { color: var(--white); }
+
+.framed-note {
+  margin: 0 var(--edge) 1rem;
+  padding: 0.85rem 1.1rem;
+  background: rgba(228, 184, 92, 0.18);
+  border-left: 3px solid var(--gold);
+}
+
+.framed-note a { font-weight: 600; }
+
+.auth-cta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin: 2.75rem 0 1rem;
+}
+
+.auth {
+  width: min(100%, 34rem + 2 * var(--edge));
+  padding: 2rem var(--edge) 5rem;
+}
+
+.auth h1 {
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: clamp(2.6rem, 5vw, 4rem);
+  line-height: 1;
+  margin: 0 0 0.75rem;
+}
+
+.auth-lede { margin: 0 0 2.25rem; color: var(--muted); }
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1.5rem;
+}
+
+.auth-form .field { width: 100%; }
+.auth-switch { margin: 2rem 0 0; }
+.auth-switch a { font-weight: 600; text-underline-offset: 4px; }
+
+.see-all { margin: 1.25rem 0 0; }
+.see-all a { font-weight: 600; text-underline-offset: 4px; }
+
 /* Language choice in the footer */
 .languages {
   display: flex;
@@ -1216,6 +1290,9 @@ tfoot td.total-label {
   .page-home .site-footer { padding-bottom: 6rem; }
 
   .site-footer { flex-wrap: wrap; }
+  .account { justify-content: center; }
+  .account-email { max-width: 12rem; }
+  .auth-cta .btn, .auth-form .btn { width: 100%; }
   .languages { margin-left: 0; flex-basis: 100%; }
   .doc-actions .btn { flex: 1 1 auto; }
 }

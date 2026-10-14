@@ -15,10 +15,10 @@
 </head>
 <body class="{% block body_class %}{% endblock %}">
   <header class="site-header">
-    <nav class="nav nav-left" aria-label="{{ _('Exports') }}">
-      <a href="{{ url_for('export', fmt='xlsx') }}">{{ _("Export Excel") }}</a>
-      <a href="{{ url_for('export', fmt='csv') }}">{{ _("Export CSV") }}</a>
-      <a href="{{ url_for('export', fmt='json') }}">{{ _("Export JSON") }}</a>
+    <nav class="nav nav-left" aria-label="{{ _('Documents') }}">
+      {% if user %}
+      <a href="{{ url_for('documents') }}">{{ _("My documents") }}</a>
+      {% endif %}
     </nav>
 
     <a class="brand" href="{{ url_for('index') }}" aria-label="{{ _('MSME Ledger Digitisation, home') }}">
@@ -27,9 +27,20 @@
     </a>
 
     <nav class="nav nav-right" aria-label="{{ _('Primary') }}">
+      {% if user %}
+      <span class="account">
+        <span class="account-email" title="{{ _('Signed in as {email}', email=user.email) }}">{{ user.email }}</span>
+        <form method="post" action="{{ url_for('logout') }}"><button type="submit" class="link-button">{{ _("Sign out") }}</button></form>
+      </span>
       <a class="btn btn-outline" href="{{ url_for('index') }}#upload">{{ _("Scan a ledger") }}</a>
+      {% else %}
+      <a class="btn btn-outline" href="{{ url_for('login') }}">{{ _("Sign in") }}</a>
+      {% endif %}
     </nav>
   </header>
+
+  {# Inside the Hugging Face page the app sits in a frame, where browsers drop its sign-in cookie. #}
+  <p class="framed-note" id="framed-note" hidden>{{ _("To sign in, open the app in its own tab:") }} <a id="framed-link" href="{{ url_for('index') }}" target="_blank" rel="noopener">{{ _("Open MSME Ledger") }}</a></p>
 
   {% with messages = get_flashed_messages() %}
     {% if messages %}
@@ -57,7 +68,13 @@
   </footer>
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
-  <script>window.I18N = {{ js_strings|tojson }};</script>
+  <script>
+    window.I18N = {{ js_strings|tojson }};
+    if (window.top !== window.self) {
+      document.getElementById("framed-note").hidden = false;
+      document.getElementById("framed-link").href = window.location.href;
+    }
+  </script>
   <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>

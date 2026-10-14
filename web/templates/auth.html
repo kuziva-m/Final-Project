@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% set signing_up = mode == "signup" %}
+{% block title %}{{ _("Create an account") if signing_up else _("Sign in") }} · MSME Ledger{% endblock %}
+{% block body_class %}page-auth{% endblock %}
+{% block content %}
+  <section class="auth">
+    <h1>{{ _("Create an account") if signing_up else _("Sign in") }}</h1>
+    <p class="auth-lede">{{ _("Your scans are saved in your account, and only you can see them.") }}</p>
+
+    <form method="post" action="{{ url_for(mode, next=request.args.get('next')) }}" class="auth-form">
+      <label class="field">
+        <span class="field-label">{{ _("Email") }}</span>
+        <input type="email" name="email" value="{{ email }}" autocomplete="email" required maxlength="254">
+      </label>
+      <label class="field">
+        <span class="field-label">{{ _("Password") }}</span>
+        <input type="password" name="password" required {% if signing_up %}minlength="8" autocomplete="new-password"{% else %}autocomplete="current-password"{% endif %}>
+        {% if signing_up %}<span class="field-hint">{{ _("At least 8 characters.") }}</span>{% endif %}
+      </label>
+      {% if code_required %}
+      <label class="field">
+        <span class="field-label">{{ _("Sign-up code") }}</span>
+        <input type="text" name="code" required autocomplete="off">
+        <span class="field-hint">{{ _("Ask the app's owner for the code.") }}</span>
+      </label>
+      {% endif %}
+      <button type="submit" class="btn btn-solid">{{ _("Create account") if signing_up else _("Sign in") }}</button>
+    </form>
+
+    <p class="auth-switch">
+      {% if signing_up %}
+      {{ _("Already have an account?") }} <a href="{{ url_for('login', next=request.args.get('next')) }}">{{ _("Sign in") }}</a>
+      {% else %}
+      {{ _("New here?") }} <a href="{{ url_for('signup', next=request.args.get('next')) }}">{{ _("Create an account") }}</a>
+      {% endif %}
+    </p>
+  </section>
+{% endblock %}

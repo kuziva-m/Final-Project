@@ -7,7 +7,15 @@
       <h1>{{ _("Digitise handwritten ledgers") }}</h1>
       <p class="lede">{{ _("Photo in. Editable table out.") }}</p>
 
+      {% if user %}
       {% with append_to=None %}{% include "partials/upload_form.html" %}{% endwith %}
+      {% else %}
+      <div class="auth-cta">
+        <a class="btn btn-solid" href="{{ url_for('signup') }}">{{ _("Create an account") }}</a>
+        <a class="btn btn-outline" href="{{ url_for('login') }}">{{ _("Sign in") }}</a>
+      </div>
+      <p class="tip">{{ _("Sign in to scan. Everything you save is kept in your account, and only you can see it.") }}</p>
+      {% endif %}
     </div>
 
     <div class="hero-emblem">
@@ -15,7 +23,7 @@
     </div>
   </section>
 
-  {% include "partials/busy.html" %}
+  {% if user %}{% include "partials/busy.html" %}{% endif %}
 
   {% if recent %}
   <section class="recent" aria-labelledby="recent-heading">
@@ -30,6 +38,9 @@
       </li>
       {% endfor %}
     </ul>
+    {% if total_documents > recent|length %}
+    <p class="see-all"><a href="{{ url_for('documents') }}">{{ _("See all {n} documents", n=total_documents) }}</a></p>
+    {% endif %}
   </section>
   {% endif %}
 
@@ -59,5 +70,5 @@
     </ol>
   </section>
 
-  <a class="btn btn-solid thumb-bar" id="thumb-bar" href="#upload" hidden>{{ _("Scan a ledger") }}</a>
+  {% if user %}<a class="btn btn-solid thumb-bar" id="thumb-bar" href="#upload" hidden>{{ _("Scan a ledger") }}</a>{% endif %}
 {% endblock %}
