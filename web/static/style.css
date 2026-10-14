@@ -348,19 +348,22 @@ button:disabled {
   cursor: progress;
 }
 
-/* Instructions under the hero */
+/* Instructions under the hero: four steps in a row. Each drawing follows the
+   same ledger page from handwriting to typed data, and its ring fills with
+   gold to show how far along you are (partials/step_art.html). */
 
 .howto {
-  padding: 3.5rem var(--edge) 4.5rem;
+  padding: clamp(4rem, 8vw, 7.5rem) var(--edge);
   border-top: 1px solid var(--line);
 }
 
 .howto h2 {
   font-family: var(--serif);
   font-weight: 600;
-  font-size: clamp(2rem, 3.2vw, 3rem);
+  font-size: clamp(2.75rem, 4.5vw, 4rem);
   line-height: 1;
-  margin: 0 0 2.25rem;
+  letter-spacing: -0.01em;
+  margin: 0 0 clamp(2rem, 4.4vw, 4rem);
 }
 
 .howto ol {
@@ -369,35 +372,74 @@ button:disabled {
   padding: 0;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 2.5rem;
+  align-items: start;
+  gap: 2.5rem 3rem;
 }
 
 .howto li {
-  padding-top: 1.25rem;
-  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+  min-width: 0;
 }
 
-.step-num {
-  display: block;
-  font-family: var(--serif);
-  font-style: italic;
-  font-weight: 500;
-  font-size: 2.6rem;
-  line-height: 1;
-  color: var(--gold);
-}
+.step-copy { min-width: 0; }
 
 .howto h3 {
+  --title-size: clamp(1.75rem, 2.5vw, 2.25rem);
+  --num-size: 30px;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.875rem;
   font-family: var(--serif);
   font-weight: 600;
-  font-size: 1.75rem;
-  margin: 0.6rem 0 0.35rem;
+  font-size: var(--title-size);
+  line-height: 1.1;
+  margin: 0 0 0.625rem;
+}
+
+/* The step number: a solid gold node, like the emblem's. Centred on the
+   title's first line, so it stays put when a translation wraps. */
+.step-num {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--num-size);
+  height: var(--num-size);
+  margin-top: calc((var(--title-size) * 1.1 - var(--num-size)) / 2);
+  border-radius: 50%;
+  background: var(--gold);
+  color: var(--navy);
+  font-family: var(--sans);
+  font-size: 0.94rem;
+  font-weight: 600;
+  line-height: 1;
 }
 
 .howto p {
   margin: 0;
-  color: var(--muted);
+  max-width: 38ch;
+  font-size: clamp(1rem, 1.25vw, 1.125rem);
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.86);
+  text-wrap: pretty;
 }
+
+/* White line art at one stroke weight. The track uses the hairline colour;
+   gold marks progress and nothing else. */
+.step-art {
+  display: block;
+  flex: none;
+  width: clamp(5.5rem, 12vw, 10.5rem);
+  height: auto;
+  aspect-ratio: 1;
+  color: var(--white);
+}
+
+.step-art .track { stroke: var(--line); }
+.step-art .progress { stroke: var(--gold); }
+.step-art .node { fill: var(--gold); }
 
 /* ---------------------------------------------------------------------- */
 /* Review page                                                              */
@@ -1315,7 +1357,12 @@ tfoot td.total-label {
 }
 
 @media (max-width: 600px) {
-  .howto ol { grid-template-columns: 1fr; }
+  /* Steps stack, each drawing small beside its text */
+  .howto ol { grid-template-columns: 1fr; gap: 1.75rem; }
+  .howto li { flex-direction: row; align-items: flex-start; gap: 1.25rem; }
+  .step-art { width: 5.5rem; }
+  .howto h3 { --title-size: 1.75rem; --num-size: 26px; gap: 0.625rem; }
+  .step-num { font-size: 0.8rem; }
   .pick, .pick .btn, .file-pick { width: 100%; }
   .sheet { box-shadow: 6px 6px 0 var(--navy); max-height: 65vh; }
 

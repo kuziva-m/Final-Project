@@ -44,28 +44,37 @@
   </section>
   {% endif %}
 
+  {% from "partials/step_art.html" import step_art %}
   <section class="howto" aria-labelledby="howto-heading">
     <h2 id="howto-heading">{{ _("How to use it") }}</h2>
     <ol>
       <li>
-        <span class="step-num">01</span>
-        <h3>{{ _("Photograph") }}</h3>
-        <p>{{ _("Lay the page flat in good light and take a photo.") }}</p>
+        {{ step_art(1) }}
+        <div class="step-copy">
+          <h3><span class="step-num">1</span>{{ _("Photograph") }}</h3>
+          <p>{{ _("Lay the page flat in good light and take a photo.") }}</p>
+        </div>
       </li>
       <li>
-        <span class="step-num">02</span>
-        <h3>{{ _("Upload") }}</h3>
-        <p>{{ _("Choose the photo or scanned PDF above and press Digitise.") }}</p>
+        {{ step_art(2) }}
+        <div class="step-copy">
+          <h3><span class="step-num">2</span>{{ _("Upload") }}</h3>
+          <p>{{ _("Choose the photo or scanned PDF above and press Digitise.") }}</p>
+        </div>
       </li>
       <li>
-        <span class="step-num">03</span>
-        <h3>{{ _("Check") }}</h3>
-        <p>{{ _("Fix any heading or cell that was read wrong. Amber cells need a look.") }}</p>
+        {{ step_art(3) }}
+        <div class="step-copy">
+          <h3><span class="step-num">3</span>{{ _("Check") }}</h3>
+          <p>{{ _("Fix any heading or cell that was read wrong. Amber cells need a look.") }}</p>
+        </div>
       </li>
       <li>
-        <span class="step-num">04</span>
-        <h3>{{ _("Save") }}</h3>
-        <p>{{ _("Save, then download Excel, share it, or add the next page.") }}</p>
+        {{ step_art(4) }}
+        <div class="step-copy">
+          <h3><span class="step-num">4</span>{{ _("Save") }}</h3>
+          <p>{{ _("Save, then download Excel, share it, or add the next page.") }}</p>
+        </div>
       </li>
     </ol>
   </section>

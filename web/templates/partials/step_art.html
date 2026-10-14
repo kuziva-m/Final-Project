@@ -1,0 +1,55 @@
+{#- Line drawings for the "How to use it" steps. One ledger page goes from
+    handwriting (steps 1-2) to typed data (steps 3-4), ending as an Excel
+    file. The ring fills with gold a quarter at a time to show progress.
+    Drawn on a 200 grid at one stroke weight, like the CUT emblem; the ink,
+    track and gold colours come from .step-art in style.css. -#}
+{% macro step_art(n) -%}
+{%- set arcs = {
+  1: "M100 10 A90 90 0 0 1 190 100",
+  2: "M100 10 A90 90 0 0 1 190 100 A90 90 0 0 1 100 190",
+  3: "M100 10 A90 90 0 0 1 190 100 A90 90 0 0 1 100 190 A90 90 0 0 1 10 100",
+  4: "M100 10 A90 90 0 1 1 99.99 10",
+} -%}
+{%- set nodes = {1: (190, 100), 2: (100, 190), 3: (10, 100), 4: (100, 10)} -%}
+<svg class="step-art" viewBox="0 0 200 200" fill="none" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+  <circle class="track" cx="100" cy="100" r="90"/>
+  <path class="progress" d="{{ arcs[n] }}"/>
+  <circle class="node" cx="{{ nodes[n][0] }}" cy="{{ nodes[n][1] }}" r="6.5"/>
+  {%- if n == 1 %}
+  {#- An open ledger, handwritten, framed in a camera viewfinder -#}
+  <g stroke="currentColor">
+    <path d="M38 74 V56 H56 M144 56 H162 V74 M162 126 V144 H144 M56 144 H38 V126"/>
+    <path d="M54 74 Q77 66 100 74 Q123 66 146 74 V128 Q123 120 100 128 Q77 120 54 128 Z M100 74 V128"/>
+    <path d="M64 90 q3 -5.5 6 0 t6 0 t6 0 t6 0 M64 102 q3 -5.5 6 0 t6 0 t6 0 M64 114 q3 -5.5 6 0 t6 0 t6 0 t6 0 M110 90 q3 -5.5 6 0 t6 0 t6 0 t6 0 M110 102 q3 -5.5 6 0 t6 0 t6 0 t6 0 M110 114 q3 -5.5 6 0 t6 0"/>
+  </g>
+  {%- elif n == 2 %}
+  {#- The handwritten page going up -#}
+  <g stroke="currentColor">
+    <path d="M100 66 V36 M86 50 L100 36 L114 50"/>
+    <path d="M64 76 H122 L138 92 V164 H64 Z M122 76 V92 H138"/>
+    <path d="M76 106 q3 -5.5 6 0 t6 0 t6 0 t6 0 t6 0 t6 0 t6 0 M76 120 q3 -5.5 6 0 t6 0 t6 0 t6 0 t6 0 t6 0 M76 134 q3 -5.5 6 0 t6 0 t6 0 t6 0 t6 0 t6 0 t6 0 M76 148 q3 -5.5 6 0 t6 0 t6 0"/>
+  </g>
+  {%- elif n == 3 %}
+  {#- The page as typed data, with one cell in the app's "unsure" amber -#}
+  <rect x="118" y="88" width="40" height="26" fill="#FBE8B8"/>
+  <rect x="119.7" y="89.7" width="4" height="22.6" fill="#D99A1E"/>
+  <g stroke="currentColor">
+    <path d="M42 62 H158 V140 H42 Z M80 62 V140 M118 62 V140 M42 88 H158 M42 114 H158"/>
+    <path d="M50 75 H70 M88 75 H106 M126 75 H148 M50 101 H66 M88 101 H108 M50 127 H68 M88 127 H102 M126 127 H146"/>
+  </g>
+  <path d="M134 96.5 Q134 92.5 138.5 92.5 Q143 92.5 143 96.5 Q143 99.5 139 100.8 V103.5" stroke="#0B1040" stroke-width="2.6"/>
+  <circle cx="139" cy="108" r="1.7" fill="#0B1040"/>
+  {%- else %}
+  {#- The saved spreadsheet: a stack of pages with sheet tabs and "add page" -#}
+  <g stroke="currentColor">
+    <path d="M58 56 V48 H158 V118 H150"/>
+    <path d="M42 56 H150 V126 H42 Z"/>
+    <path d="M42 56 H150 V76 H42 Z" fill="currentColor"/>
+    <path d="M78 76 V126 M114 76 V126 M42 101 H150"/>
+    <path d="M48 126 V138 Q48 142 52 142 H74 Q78 142 78 138 V126 Z" fill="currentColor"/>
+    <path d="M84 126 V138 Q84 142 88 142 H106 Q110 142 110 138 V126"/>
+    <path d="M128 127 V141 M121 134 H135"/>
+  </g>
+  {%- endif %}
+</svg>
+{%- endmacro %}
