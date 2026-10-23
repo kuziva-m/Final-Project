@@ -905,7 +905,7 @@
     });
 
     form.addEventListener("input", function (e) {
-      if (e.target.tagName !== "INPUT") return;
+      if (e.target.tagName !== "INPUT" || e.target.closest(".find-bar")) return;
       if (e.target.closest("tbody")) markUnsure(e.target);
       changed(tableOf(e.target));
     });
@@ -959,6 +959,191 @@
         }
       }]);
     });
+
+    // --- Change every copy of a word (a name the reader keeps misreading, say) ---------
+
+    var findOpen = document.getElementById("find-open");
+    var findBar = document.getElementById("find-bar");
+    if (findOpen && findBar) {
+      var findText = document.getElementById("find-text");
+      var findWith = document.getElementById("find-with");
+      var findWords = document.getElementById("find-words");
+      var findCase = document.getElementById("find-case");
+      var findApply = document.getElementById("find-apply");
+      var findNext = document.getElementById("find-next");
+      var findStatus = document.getElementById("find-status");
+      var actionbar = findBar.parentNode;
+      var matches = [];
+      var lastCell = null;
+      var opener = findOpen;
+      var showingResult = false; // "Changed 6 cells. Undo" stays up while cells are edited
+
+      // The toast sits just above the Save bar, which is taller while this is open.
+      var placeToast = function () {
+        document.body.style.setProperty("--actionbar-h", actionbar.offsetHeight + "px");
+      };
+
+      // Whole words: "Manyo" in "B.Manyo" or "Mr Manyo", but not inside "Manyoka".
+      // The leading character is captured so the replacement can put it back.
+      function pattern() {
+        var text = findText.value.trim();
+        if (!text) return null;
+        var escaped = text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        var flags = "g" + (findCase.checked ? "" : "i");
+        if (!findWords.checked) return new RegExp("()" + escaped, flags);
+        try {
+          return new RegExp("(^|[^\\p{L}\\p{N}])" + escaped + "(?![\\p{L}\\p{N}])", flags + "u");
+        } catch (err) {
+          return new RegExp("(^|[^A-Za-z0-9])" + escaped + "(?![A-Za-z0-9])", flags);
+        }
+      }
+
+      function setStatus(text, undo) {
+        findStatus.textContent = text;
+        if (!undo) return;
+        var button = document.createElement("button");
+        button.type = "button";
+        button.className = "link-button";
+        button.textContent = T("Undo");
+        button.addEventListener("click", undo);
+        findStatus.appendChild(document.createTextNode(" "));
+        findStatus.appendChild(button);
+      }
+
+      // Outline the cells that contain the word, and say how many there are.
+      function refresh(keepStatus) {
+        var re = pattern();
+        matches = re ? live("tbody input").filter(function (input) { return input.value.search(re) !== -1; }) : [];
+        var found = new Set(matches);
+        cells().forEach(function (input) { input.classList.toggle("is-match", found.has(input)); });
+        findApply.disabled = !matches.length;
+        findNext.hidden = !matches.length;
+        if (keepStatus) return;
+        showingResult = false;
+        var pagesWith = new Set(matches.map(function (input) { return input.closest(".page"); })).size;
+        setStatus(!re ? T("Type a word or name as it appears in the table.")
+          : !matches.length ? T("Not found in the table.")
+          : matches.length === 1 ? T("Found in 1 cell.")
+          : pagesWith > 1 ? T("Found in {n} cells on {pages} pages.", { n: matches.length, pages: pagesWith })
+          : T("Found in {n} cells.", { n: matches.length }));
+      }
+
+      function setCell(input, value, tables) {
+        input.value = value;
+        markUnsure(input);
+        before.set(input, value); // so the one-cell "Change the other…" offer doesn't fire too
+        tables.add(tableOf(input));
+      }
+
+      function changeAll() {
+        var re = pattern();
+        if (!re) return;
+        var replacement = findWith.value.trim();
+        var undo = [], tables = new Set();
+        live("tbody input").forEach(function (input) {
+          var value = input.value.replace(re, function (match, lead) { return lead + replacement; });
+          if (value === input.value) return;
+          undo.push({ input: input, value: input.value });
+          setCell(input, value, tables);
+        });
+        tables.forEach(changed);
+        refresh(true);
+        setStatus(count(undo.length, "Changed 1 cell.", "Changed {n} cells."), undo.length && function () {
+          var back = new Set();
+          undo.forEach(function (item) { setCell(item.input, item.value, back); });
+          back.forEach(changed);
+          refresh(true);
+          setStatus(T("Undone."));
+        });
+        showingResult = true;
+      }
+
+      // The next cell with the word, after the one last worked on, on any page.
+      function showNext(focusCell) {
+        refresh(true);
+        var found = new Set(matches);
+        var all = live("tbody input");
+        var at = all.indexOf(lastCell);
+        var next = all.slice(at + 1).concat(all.slice(0, at + 1)).filter(function (c) { return found.has(c); })[0];
+        if (!next) return;
+        revealCell(next);
+        lastCell = next;
+        if (focusCell) {
+          next.focus();
+        } else {
+          var show = viewers.get(next.closest(".page"));
+          if (show) show(next.closest("td"));
+        }
+        next.scrollIntoView({ block: "center" });
+      }
+
+      function openFind() {
+        // Text picked out in a cell before pressing the button is the word to change.
+        var picked = lastCell && lastCell.value.slice(lastCell.selectionStart, lastCell.selectionEnd).trim();
+        if (picked) findText.value = picked;
+        findBar.hidden = false;
+        actionbar.classList.add("is-finding");
+        findOpen.setAttribute("aria-expanded", "true");
+        findText.focus();
+        findText.select();
+        refresh();
+        placeToast();
+      }
+
+      function closeFind() {
+        findBar.hidden = true;
+        actionbar.classList.remove("is-finding");
+        findOpen.setAttribute("aria-expanded", "false");
+        cells().forEach(function (input) { input.classList.remove("is-match"); });
+        placeToast();
+        opener.focus();
+      }
+
+      function toggleFind() {
+        opener = this;
+        if (findBar.hidden) openFind(); else closeFind();
+      }
+      findOpen.hidden = false;
+      findOpen.addEventListener("click", toggleFind);
+      // Phones have no room for another button in the Save bar, so there it sits by each table's Copy link.
+      Array.prototype.forEach.call(form.querySelectorAll(".table-tools"), function (tools) {
+        var link = document.createElement("button");
+        link.type = "button";
+        link.className = "link-button find-link";
+        link.textContent = T("Change every…");
+        link.setAttribute("aria-controls", "find-bar");
+        link.addEventListener("click", toggleFind);
+        tools.appendChild(link);
+      });
+      document.getElementById("find-close").addEventListener("click", closeFind);
+      findApply.addEventListener("click", changeAll);
+      findNext.addEventListener("click", function () { showNext(true); });
+      findText.addEventListener("input", function () { refresh(); });
+      findWords.addEventListener("change", function () { refresh(); });
+      findCase.addEventListener("change", function () { refresh(); });
+
+      // Enter: next copy from the first box, change all from the second, never Save.
+      findBar.addEventListener("keydown", function (e) {
+        if (e.key === "Escape") return closeFind();
+        if (e.key !== "Enter" || e.target.tagName === "BUTTON") return;
+        e.preventDefault();
+        if (e.target === findWith && !findApply.disabled) changeAll();
+        else if (e.target === findText) showNext(false);
+      });
+
+      form.addEventListener("focusin", function (e) {
+        if (e.target.tagName === "INPUT" && e.target.closest("tbody")) lastCell = e.target;
+      });
+      // Cells edited, rows added or pages ticked for deletion: count again,
+      // once the other handlers have made their change.
+      ["input", "change", "click"].forEach(function (type) {
+        form.addEventListener(type, function (e) {
+          if (findBar.hidden || e.target.closest(".find-bar")) return;
+          setTimeout(function () { refresh(showingResult); }, 0);
+        });
+      });
+      window.addEventListener("resize", function () { if (!findBar.hidden) placeToast(); });
+    }
 
     form.addEventListener("click", function (e) {
       var add = e.target.closest(".row-add");

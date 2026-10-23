@@ -809,7 +809,7 @@ td input[type="text"]:focus {
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
 }
 
-.page-review .toast { bottom: 6.5rem; }
+.page-review .toast { bottom: calc(var(--actionbar-h, 5rem) + 1.5rem); }
 
 .toast button,
 .link-button {
@@ -978,6 +978,12 @@ td input.unsure {
 
 td input.unsure:focus { background: #FFF6DC; }
 
+/* Cells holding the word in "Change every…" */
+td input.is-match {
+  background: #DCE3FF;
+  box-shadow: inset 0 0 0 2px var(--blue);
+}
+
 /* Insert / delete row buttons, added by app.js */
 th.row-tools { width: 1%; }
 
@@ -1040,6 +1046,75 @@ tfoot td.total-label {
   margin: 0 auto 0 0;
   font-weight: 600;
 }
+
+/* "Change every…": a row above the Save bar's buttons, opened by app.js */
+.find-bar {
+  flex: 1 1 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem 1.5rem;
+  padding-bottom: 0.9rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.find-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  flex: 1 1 13rem;
+  min-width: 0;
+  max-width: 22rem;
+}
+
+.find-field input {
+  width: 100%;
+  padding: 0.5rem 0;
+  border: 0;
+  border-bottom: 1.5px solid var(--line);
+  background: transparent;
+  color: var(--white);
+  font-family: var(--sans);
+  font-size: 1.05rem;
+}
+
+.find-field input::placeholder { color: rgba(255, 255, 255, 0.55); }
+.find-field input:focus { outline: none; border-bottom-color: var(--gold); }
+
+.find-bar .btn { padding: 0.7rem 1.4rem; }
+.find-bar .btn:disabled { opacity: 0.45; cursor: default; }
+.find-bar .btn:disabled:hover { background: transparent; color: var(--white); }
+
+.find-close {
+  align-self: flex-start;
+  margin-left: auto;
+  width: 2.4rem;
+  height: 2.4rem;
+  border: 1.5px solid var(--line);
+  background: transparent;
+  color: var(--white);
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.find-close:hover { border-color: var(--white); }
+
+.find-foot {
+  flex: 1 1 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 1.5rem;
+  font-size: 0.92rem;
+}
+
+.find-option { display: inline-flex; align-items: center; gap: 0.45rem; cursor: pointer; }
+.find-option input { width: 1.05rem; height: 1.05rem; accent-color: var(--gold); }
+
+.find-status { margin: 0 0 0 auto; font-weight: 600; }
+.find-link { display: none; }
+.find-status .link-button { padding: 0 0.2rem; }
 
 .details {
   margin-top: 3rem;
@@ -1391,7 +1466,16 @@ tfoot td.total-label {
   .actionbar { flex-wrap: nowrap; gap: 0.5rem; padding-top: 0.6rem; padding-bottom: 0.6rem; }
   .actionbar .btn { flex: 1 1 0; padding: 0.7rem 0.4rem; font-size: 0.95rem; }
   .actionbar-summary { display: none; }
-  .page-review .toast { bottom: 5.5rem; }
+  .actionbar.is-finding { flex-wrap: wrap; }
+  #find-open { display: none; }
+  .find-link { display: inline-block; }
+  .find-bar { position: relative; gap: 0.6rem 1rem; }
+  .find-field { flex: 1 1 9rem; max-width: none; }
+  .find-field:first-of-type { flex-basis: 100%; padding-right: 3rem; }
+  .find-bar .btn { flex: 0 0 auto; }
+  .find-close { position: absolute; top: 0; right: 0; margin: 0; }
+  .find-status { margin-left: 0; flex: 1 1 auto; }
+  .page-review .toast { bottom: calc(var(--actionbar-h, 4rem) + 1.5rem); }
   .page-home .site-footer { padding-bottom: 6rem; }
 
   .site-footer { flex-wrap: wrap; }

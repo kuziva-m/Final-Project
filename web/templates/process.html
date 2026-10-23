@@ -31,7 +31,27 @@
 
 {% macro actions() -%}
   <div class="actionbar">
+    {# Change every copy of a word, e.g. a name the reader keeps getting wrong. Needs app.js. #}
+    <div class="find-bar" id="find-bar" hidden>
+      <label class="find-field">
+        <span class="field-label">{{ _("Change every") }}</span>
+        <input type="text" id="find-text" autocomplete="off" spellcheck="false" placeholder="{{ _('Word read wrong') }}">
+      </label>
+      <label class="find-field">
+        <span class="field-label">{{ _("To") }}</span>
+        <input type="text" id="find-with" autocomplete="off" spellcheck="false" placeholder="{{ _('What it should say') }}">
+      </label>
+      <button type="button" class="btn btn-outline" id="find-apply" disabled>{{ _("Change all") }}</button>
+      <button type="button" class="find-close" id="find-close" aria-label="{{ _('Close') }}">×</button>
+      <div class="find-foot">
+        <label class="find-option"><input type="checkbox" id="find-words" checked> {{ _("Whole words only") }}</label>
+        <label class="find-option"><input type="checkbox" id="find-case"> {{ _("Match capitals") }}</label>
+        <p class="find-status" id="find-status" role="status"></p>
+        <button type="button" class="link-button" id="find-next" hidden>{{ _("Show next") }}</button>
+      </div>
+    </div>
     <p class="actionbar-summary" id="actionbar-summary" aria-hidden="true"></p>
+    <button type="button" class="btn btn-outline" id="find-open" aria-controls="find-bar" aria-expanded="false" hidden>{{ _("Change every…") }}</button>
     <button type="button" class="btn btn-outline" id="next-unsure" hidden>{{ _("Next to check") }}</button>
     <button type="submit" class="btn btn-solid">{{ _("Save") }}</button>
     {% if scan %}
