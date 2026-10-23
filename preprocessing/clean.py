@@ -68,17 +68,23 @@ def deskew(image: np.ndarray, skew_threshold_deg: float = 0.5) -> np.ndarray:
     # Threshold to separate text from background, suppressing noise.
     _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)
 
-    # All non-zero pixels (text) as a point set for minAreaRect.
-    coords = np.column_stack(np.where(thresh > 0))
-    if coords.shape[0] < 5:
+    # All non-zero pixels (text) as (x, y) points -- minAreaRect expects x first.
+    ys, xs = np.where(thresh > 0)
+    if xs.size < 5:
         # Too few text pixels to estimate angle reliably; return as-is.
         return image.copy()
+    points = np.column_stack((xs, ys)).astype(np.float32)
 
-    # minAreaRect returns angle in (-90, 0]; convert to a signed tilt.
-    rect = cv2.minAreaRect(coords)
-    angle = rect[-1]
-    if angle < -45:
-        angle = 90 + angle  # long edge is horizontal
+    # Tilt of the rectangle's long edge, taken from its corner points so it
+    # doesn't depend on minAreaRect's angle convention (which changed in
+    # OpenCV 4.5.1). Positive = text slopes down to the right.
+    box = cv2.boxPoints(cv2.minAreaRect(points))
+    dx, dy = max((box[1] - box[0], box[2] - box[1]), key=lambda e: float(e[0] ** 2 + e[1] ** 2))
+    angle = (float(np.degrees(np.arctan2(dy, dx))) + 90) % 180 - 90  # a line, either direction
+    if angle > 45:
+        angle -= 90  # long edge runs down the page (tall text block)
+    elif angle < -45:
+        angle += 90
 
     if abs(angle) < skew_threshold_deg:
         return image.copy()
