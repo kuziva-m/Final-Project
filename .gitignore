@@ -34,3 +34,9 @@ data/uploads/*
 
 # SQLite database created by web/app.py at runtime
 data/records.db
+
+# OCR model files downloaded by scripts/prepare_offline.py (large)
+models/
+
+# Secret key created by web/app.py when FLASK_SECRET_KEY isn't set
+data/secret_key

@@ -105,10 +105,33 @@ app.config["MAX_CONTENT_LENGTH"] = int(os.environ.get("LEDGER_MAX_UPLOAD_MB", "1
 # Flask's 500 KB default for submitted form fields is too small for a review
 # page holding many pages of tables.
 app.config["MAX_FORM_MEMORY_SIZE"] = 16 * 1024 * 1024
-# The session cookie says who is signed in, so its signing key must be secret.
-# Without FLASK_SECRET_KEY a random key is made, which signs everyone out
-# whenever the server restarts.
-app.secret_key = os.environ.get("FLASK_SECRET_KEY") or secrets.token_hex(32)
+
+
+def _secret_key() -> str:
+    """FLASK_SECRET_KEY, or a random key kept in data/secret_key.
+
+    The session cookie says who is signed in, so its signing key must be
+    secret. Keeping the made-up key in a file means a laptop running the app
+    offline doesn't sign everyone out each time it restarts. (On a Space the
+    disk is wiped on restart, so set FLASK_SECRET_KEY there.)"""
+    if os.environ.get("FLASK_SECRET_KEY"):
+        return os.environ["FLASK_SECRET_KEY"]
+    path = DATA_DIR / "secret_key"
+    try:
+        key = path.read_text(encoding="ascii").strip()
+        if len(key) >= 32:
+            return key
+    except OSError:
+        pass
+    key = secrets.token_hex(32)
+    try:
+        path.write_text(key, encoding="ascii")
+    except OSError:
+        pass  # read-only disk: the key lasts until the server restarts
+    return key
+
+
+app.secret_key = _secret_key()
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     # Not sent with requests from other sites, so they can't post forms as you.
@@ -450,10 +473,20 @@ def _env_int(name: str, default: int) -> int:
 
 
 # A scanned record book can be dozens of pages; each page read by Claude
-# costs a few cents, so cap the pages read per PDF. The free OCR fallback
-# takes far longer per page on CPU, so it reads fewer.
+# costs a few cents, so cap the pages read per PDF.
 MAX_PDF_PAGES = _env_int("LEDGER_MAX_PDF_PAGES", 40)
-MAX_FALLBACK_PDF_PAGES = _env_int("LEDGER_MAX_FALLBACK_PDF_PAGES", 5)
+# Pages the free reader (Tesseract + EasyOCR) reads per PDF. It is far slower,
+# so when it only stands in for a failed Claude call it reads the first few;
+# when it is the only reader (offline, no API key) it reads as many as Claude
+# would. LEDGER_MAX_FALLBACK_PDF_PAGES sets it explicitly.
+MAX_FALLBACK_PDF_PAGES = (_env_int("LEDGER_MAX_FALLBACK_PDF_PAGES", 5)
+                          if os.environ.get("LEDGER_MAX_FALLBACK_PDF_PAGES") else None)
+
+
+def _fallback_page_cap() -> int:
+    if MAX_FALLBACK_PDF_PAGES:
+        return MAX_FALLBACK_PDF_PAGES
+    return 5 if claude_reader.is_enabled() else MAX_PDF_PAGES
 
 
 def _pages_note(read: int, total: int, is_pdf: bool) -> str:
@@ -682,7 +715,7 @@ def _run_pipeline_on_file(source_path: Path, detect_tables: bool = False,
         # engine won each field -- so the review UI can show what fusion
         # auto-corrected.
         rows, provenance = [], []
-        fallback_pages = page_paths[:MAX_FALLBACK_PDF_PAGES]
+        fallback_pages = page_paths[:_fallback_page_cap()]
         _progress_update(token, total=len(fallback_pages), done=set(), fallback=True)
         for i, page_path in enumerate(fallback_pages):
             clean_path = cleaned[i] if i in cleaned else clean_page(page_path)
@@ -1409,7 +1442,34 @@ if backup.enabled and threading.current_thread() is threading.main_thread():
     signal.signal(signal.SIGTERM, _push_and_exit)
 
 
+def _local_addresses() -> list[str]:
+    """This computer's addresses on the local network, for phones to connect to."""
+    import socket
+
+    found: list[str] = []
+    try:
+        # No packet is sent; this only asks which network card would be used.
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.connect(("10.254.254.254", 1))
+            found.append(probe.getsockname()[0])
+    except OSError:
+        pass
+    try:
+        found += socket.gethostbyname_ex(socket.gethostname())[2]
+    except OSError:
+        pass
+    return [ip for i, ip in enumerate(found) if not ip.startswith("127.") and ip not in found[:i]]
+
+
 if __name__ == "__main__":
     debug = os.environ.get("FLASK_DEBUG", "0") == "1"
-    # 0.0.0.0:7860 matches the Hugging Face Spaces container convention.
-    app.run(host="0.0.0.0", port=7860, debug=debug)
+    # 0.0.0.0:7860 matches the Hugging Face Spaces container convention, and
+    # lets phones on the same Wi-Fi reach a laptop running the app offline.
+    port = _env_int("PORT", 7860)
+    print("\nMSME Ledger is running.")
+    print(f"  On this computer:            http://localhost:{port}")
+    for ip in _local_addresses():
+        print(f"  On phones on the same Wi-Fi: http://{ip}:{port}")
+    reader = "Claude, with the free reader as backup" if claude_reader.is_enabled() else "the free reader (offline)"
+    print(f"  Reading pages with {reader}.  Press Ctrl+C to stop.\n")
+    app.run(host="0.0.0.0", port=port, debug=debug, threaded=True)

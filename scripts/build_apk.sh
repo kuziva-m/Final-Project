@@ -5,7 +5,8 @@
 # Prerequisites:
 #   - Flutter SDK installed and on $PATH  (https://docs.flutter.dev/get-started/install)
 #   - Android SDK / build-tools installed (comes with Android Studio or sdkmanager)
-#   - API deployed (e.g. to Hugging Face Spaces); URL set in app/lib/main.dart (kApiBase)
+#   - API deployed (e.g. to Hugging Face Spaces); default URL in app/lib/main.dart (kDefaultServer).
+#     Users can switch to a laptop on the local Wi-Fi from the app's menu.
 
 set -e
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"

@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import csv
 import os
+import shutil
 from collections import defaultdict
 from pathlib import Path
 
@@ -29,6 +30,45 @@ from PIL import Image
 
 _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp"}
 
+# EasyOCR's model files live in the project (models/easyocr) so a computer
+# with no internet can run it: scripts/prepare_offline.py downloads them once.
+# LEDGER_EASYOCR_MODELS points somewhere else if needed.
+EASYOCR_MODEL_DIR = Path(os.environ.get("LEDGER_EASYOCR_MODELS")
+                         or Path(__file__).resolve().parent.parent / "models" / "easyocr")
+EASYOCR_MODEL_FILES = ("craft_mlt_25k.pth", "english_g2.pth")  # text detection, English recognition
+
+
+def _find_tesseract() -> None:
+    """Point pytesseract at Tesseract when it isn't on PATH (the usual case on
+    Windows). LEDGER_TESSERACT_CMD names the program explicitly."""
+    explicit = os.environ.get("LEDGER_TESSERACT_CMD")
+    if explicit:
+        pytesseract.pytesseract.tesseract_cmd = explicit
+        return
+    if shutil.which("tesseract"):
+        return
+    for candidate in (r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+                      r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+                      os.path.expandvars(r"%LOCALAPPDATA%\Programs\Tesseract-OCR\tesseract.exe")):
+        if os.path.isfile(candidate):
+            pytesseract.pytesseract.tesseract_cmd = candidate
+            return
+
+
+_find_tesseract()
+
+
+def _use_gpu() -> bool:
+    """EasyOCR on an NVIDIA graphics card when LEDGER_EASYOCR_GPU=1 and one is usable."""
+    if os.environ.get("LEDGER_EASYOCR_GPU", "0") != "1":
+        return False
+    try:
+        import torch
+
+        return torch.cuda.is_available()
+    except ImportError:
+        return False
+
 
 # ---------------------------------------------------------------------------
 # OCR engines (logic mirrored from notebooks/spike_ocr_test.ipynb)
@@ -38,10 +78,16 @@ _EASYOCR_READER = None
 
 
 def _get_easyocr_reader() -> easyocr.Reader:
-    """Build the EasyOCR reader once and cache it; construction downloads models."""
+    """Build the EasyOCR reader once and cache it.
+
+    Uses the model files in EASYOCR_MODEL_DIR; only if they are missing does
+    EasyOCR try to download them (which needs the internet)."""
     global _EASYOCR_READER
     if _EASYOCR_READER is None:
-        _EASYOCR_READER = easyocr.Reader(["en"], gpu=False)
+        EASYOCR_MODEL_DIR.mkdir(parents=True, exist_ok=True)
+        have_models = all((EASYOCR_MODEL_DIR / name).is_file() for name in EASYOCR_MODEL_FILES)
+        _EASYOCR_READER = easyocr.Reader(["en"], gpu=_use_gpu(), model_storage_directory=str(EASYOCR_MODEL_DIR),
+                                         download_enabled=not have_models)
     return _EASYOCR_READER
 
 

@@ -1,7 +1,11 @@
 // Ledger Digitisation — Flutter Android app.
-// Calls the Flask backend's JSON API (web/app.py): /api/scan runs the real
-// preprocessing + Tesseract/EasyOCR fusion pipeline, /api/save persists the
-// (possibly corrected) rows to the same SQLite store the web UI uses.
+// Calls the Flask backend's JSON API (web/app.py): /api/login signs in,
+// /api/scan runs the real pipeline, /api/save persists the (possibly
+// corrected) rows to the signed-in user's account.
+//
+// The server can be the Hugging Face Space (online) or a laptop running the
+// app on the shop's Wi-Fi with no internet (see OFFLINE.md); the address is
+// changed from the menu and remembered on the phone.
 //
 // Visual design matches web/static/style.css exactly: Chinhoyi University of
 // Technology blue/gold, flat institutional style — no gradients, no
@@ -13,10 +17,66 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-// ─── Deployed Hugging Face Space backing this app. ─────────────────────────────────
-const String kApiBase = 'https://kmawoyo-msme-digitization.hf.space';
+// ─── Default server: the deployed Hugging Face Space. ────────────────────────────
+const String kDefaultServer = 'https://kmawoyo-msme-digitization.hf.space';
+// Port the app listens on when run on a laptop (python -m web.app).
+const int kLocalPort = 7860;
 // ─────────────────────────────────────────────────────────────────────────────────
+
+/// Turns what the user typed into a server address: "192.168.43.10" becomes
+/// "http://192.168.43.10:7860"; a web address without "https://" gets it.
+String normaliseServer(String input) {
+  var text = input.trim();
+  if (text.isEmpty) return kDefaultServer;
+  if (!text.contains('://')) {
+    final host = text.split(RegExp(r'[:/]')).first;
+    final isLocal = RegExp(r'^\d{1,3}(\.\d{1,3}){3}$').hasMatch(host) ||
+        host == 'localhost' ||
+        host.endsWith('.local');
+    text = '${isLocal ? 'http' : 'https'}://$text';
+  }
+  var uri = Uri.tryParse(text);
+  if (uri == null || uri.host.isEmpty) return kDefaultServer;
+  if (uri.scheme == 'http' && !uri.hasPort) uri = uri.replace(port: kLocalPort);
+  return uri.toString().replaceAll(RegExp(r'/+$'), '');
+}
+
+/// The server address and who is signed in there, kept on the phone.
+class Session {
+  Session._(this._prefs);
+  final SharedPreferences _prefs;
+
+  static Future<Session> load() async => Session._(await SharedPreferences.getInstance());
+
+  String get server => _prefs.getString('server') ?? kDefaultServer;
+  String? get token => _prefs.getString('token');
+  String? get email => _prefs.getString('email');
+  bool get signedIn => token != null;
+  bool get onHuggingFace => Uri.parse(server).host.endsWith('.hf.space');
+
+  Map<String, String> get authHeaders => {if (token != null) 'Authorization': 'Bearer $token'};
+
+  Uri uri(String path) => Uri.parse('$server$path');
+
+  Future<void> setServer(String input) async {
+    final address = normaliseServer(input);
+    // Accounts belong to one server, so a new address needs a new sign-in.
+    if (address != server) await signOut();
+    await _prefs.setString('server', address);
+  }
+
+  Future<void> signIn(String token, String email) async {
+    await _prefs.setString('token', token);
+    await _prefs.setString('email', email);
+  }
+
+  Future<void> signOut() async {
+    await _prefs.remove('token');
+    await _prefs.remove('email');
+  }
+}
 
 // ─── Chinhoyi University of Technology palette (matches web/static/style.css) ─────
 const _kPrimary = Color(0xFF1C75BC); // CUT blue
@@ -27,10 +87,15 @@ const _kBorder = Color(0xFFCCCCCC);
 const _kAccentTint = Color(0xFFFBF3E1);
 const _kRadius = 2.0; // --radius: 2px — flat, not rounded
 
-void main() => runApp(const LedgerApp());
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final session = await Session.load();
+  runApp(LedgerApp(session: session));
+}
 
 class LedgerApp extends StatelessWidget {
-  const LedgerApp({super.key});
+  final Session session;
+  const LedgerApp({super.key, required this.session});
 
   @override
   Widget build(BuildContext context) {
@@ -85,7 +150,7 @@ class LedgerApp extends StatelessWidget {
           ),
         ),
       ),
-      home: const HomeScreen(),
+      home: session.signedIn ? HomeScreen(session: session) : SignInScreen(session: session),
     );
   }
 }
@@ -210,10 +275,134 @@ class ScanResult {
   }
 }
 
+// ─── Sign-in screen ───────────────────────────────────────────────────────
+//
+// Scanning needs an account on the server. Accounts are created in the
+// browser (<server>/signup); the app only signs in.
+
+class SignInScreen extends StatefulWidget {
+  final Session session;
+  final String? message;
+  const SignInScreen({super.key, required this.session, this.message});
+
+  @override
+  State<SignInScreen> createState() => _SignInScreenState();
+}
+
+class _SignInScreenState extends State<SignInScreen> {
+  late final _server = TextEditingController(text: widget.session.server);
+  late final _email = TextEditingController(text: widget.session.email ?? '');
+  final _password = TextEditingController();
+  late String? _notice = widget.message;
+  bool _busy = false;
+
+  @override
+  void dispose() {
+    _server.dispose();
+    _email.dispose();
+    _password.dispose();
+    super.dispose();
+  }
+
+  Future<void> _signIn() async {
+    setState(() {
+      _busy = true;
+      _notice = null;
+    });
+    final session = widget.session;
+    try {
+      await session.setServer(_server.text);
+      _server.text = session.server;
+      final response = await http
+          .post(
+            session.uri('/api/login'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'email': _email.text.trim(), 'password': _password.text}),
+          )
+          .timeout(Duration(seconds: session.onHuggingFace ? 60 : 20));
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      if (response.statusCode == 200) {
+        await session.signIn(data['token'] as String, data['email'] as String);
+        if (!mounted) return;
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => HomeScreen(session: session)),
+        );
+        return;
+      }
+      setState(() => _notice = data['error'] as String? ?? 'Sign-in failed (${response.statusCode}).');
+    } on SocketException {
+      setState(() => _notice = 'Cannot reach ${session.server}.\n'
+          'Check the Wi-Fi or internet, and that the address is right.');
+    } on FormatException {
+      setState(() => _notice = 'That address answered, but it is not the MSME Ledger app. Check the address.');
+    } catch (e) {
+      setState(() => _notice = 'Cannot reach ${session.server}: $e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: const _BrandAppBar(),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const _SectionLabel('Sign in'),
+            const Text(
+              'Your scans are saved in your account. To make an account, open the '
+              'server address below in the phone\'s browser and choose "Create an account".',
+              style: TextStyle(color: _kText, fontSize: 13),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _server,
+              keyboardType: TextInputType.url,
+              autocorrect: false,
+              decoration: const InputDecoration(
+                labelText: 'Server address',
+                helperText: 'Online: leave as it is.  Offline: the address the laptop shows, e.g. 192.168.43.10',
+                helperMaxLines: 2,
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _email,
+              keyboardType: TextInputType.emailAddress,
+              autocorrect: false,
+              decoration: const InputDecoration(labelText: 'Email'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _password,
+              obscureText: true,
+              decoration: const InputDecoration(labelText: 'Password'),
+              onSubmitted: (_) => _busy ? null : _signIn(),
+            ),
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: _busy ? null : _signIn,
+              child: Text(_busy ? 'Signing in…' : 'Sign in'),
+            ),
+            if (_notice != null) ...[
+              const SizedBox(height: 16),
+              _FlashNotice(_notice!),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 // ─── Home screen ──────────────────────────────────────────────────────────
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final Session session;
+  const HomeScreen({super.key, required this.session});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -221,6 +410,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final _picker = ImagePicker();
+  Session get _session => widget.session;
 
   ScanResult? _result;
   String? _error;
@@ -246,26 +436,29 @@ class _HomeScreenState extends State<HomeScreen> {
       _result = null;
       _error = null;
       _saveConfirmation = null;
-      _statusMessage = 'Waking up server…';
+      _statusMessage = _session.onHuggingFace ? 'Waking up server…' : 'Connecting…';
     });
 
     // Warm-up ping — a sleeping Hugging Face Space can take a while to wake.
     try {
       await http
-          .get(Uri.parse('$kApiBase/api/health'))
-          .timeout(const Duration(seconds: 45));
+          .get(_session.uri('/api/health'))
+          .timeout(Duration(seconds: _session.onHuggingFace ? 45 : 10));
     } catch (_) {
       // Ignore — /api/scan below will fail with a clear error if it's really down.
     }
 
-    setState(() => _statusMessage = 'Running OCR + fusion…');
+    setState(() => _statusMessage = 'Reading your ledger…');
 
     try {
-      final request = http.MultipartRequest('POST', Uri.parse('$kApiBase/api/scan'));
+      final request = http.MultipartRequest('POST', _session.uri('/api/scan'));
+      request.headers.addAll(_session.authHeaders);
       request.files.add(await http.MultipartFile.fromPath('image', picked.path));
 
-      final streamed = await request.send().timeout(const Duration(seconds: 120));
+      // A laptop reading offline can take a minute or more per page.
+      final streamed = await request.send().timeout(const Duration(seconds: 300));
       final body = await streamed.stream.bytesToString();
+      if (streamed.statusCode == 401) return await _signInAgain();
       final data = jsonDecode(body) as Map<String, dynamic>;
 
       if (streamed.statusCode == 200) {
@@ -281,7 +474,8 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     } on SocketException {
       setState(() {
-        _error = 'Cannot reach server.\nCheck your internet connection or that the API is deployed.';
+        _error = 'Cannot reach ${_session.server}.\n'
+            'Check the Wi-Fi or internet. To use another server, open the menu (⋮) and choose Change server.';
         _statusMessage = null;
       });
     } catch (e) {
@@ -305,8 +499,8 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final response = await http
           .post(
-            Uri.parse('$kApiBase/api/save'),
-            headers: {'Content-Type': 'application/json'},
+            _session.uri('/api/save'),
+            headers: {'Content-Type': 'application/json', ..._session.authHeaders},
             body: jsonEncode({
               'source_file': result.sourceFile,
               'rows': result.rows.map((r) => r.toJson()).toList(),
@@ -314,6 +508,7 @@ class _HomeScreenState extends State<HomeScreen> {
           )
           .timeout(const Duration(seconds: 30));
 
+      if (response.statusCode == 401) return await _signInAgain();
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       if (response.statusCode == 200) {
         setState(() {
@@ -334,13 +529,67 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  /// The sign-in has expired or was revoked: back to the sign-in screen.
+  Future<void> _signInAgain() async {
+    await _session.signOut();
+    if (!mounted) return;
+    Navigator.of(context).pushReplacement(MaterialPageRoute(
+      builder: (_) => SignInScreen(session: _session, message: 'Please sign in again.'),
+    ));
+  }
+
+  Future<void> _changeServer() async {
+    final controller = TextEditingController(text: _session.server);
+    final address = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Change server'),
+        content: TextField(
+          controller: controller,
+          keyboardType: TextInputType.url,
+          autocorrect: false,
+          decoration: const InputDecoration(
+            labelText: 'Server address',
+            helperText: 'e.g. 192.168.43.10 for a laptop on this Wi-Fi',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, kDefaultServer),
+            child: const Text('Use online server'),
+          ),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(context, controller.text), child: const Text('Save')),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (address == null || normaliseServer(address) == _session.server) return;
+    await _session.setServer(address);
+    if (!mounted) return;
+    Navigator.of(context).pushReplacement(MaterialPageRoute(
+      builder: (_) => SignInScreen(session: _session, message: 'Sign in to ${_session.server}.'),
+    ));
+  }
+
   @override
   Widget build(BuildContext context) {
     final busy = _statusMessage != null;
     final result = _result;
 
     return Scaffold(
-      appBar: _BrandAppBar(),
+      appBar: _BrandAppBar(actions: [
+        PopupMenuButton<String>(
+          iconColor: Colors.white,
+          onSelected: (choice) => choice == 'server' ? _changeServer() : _signInAgain(),
+          itemBuilder: (context) => [
+            PopupMenuItem(enabled: false, child: Text(_session.email ?? '', style: const TextStyle(fontSize: 13))),
+            PopupMenuItem(enabled: false, child: Text(_session.server, style: const TextStyle(fontSize: 12))),
+            const PopupMenuItem(value: 'server', child: Text('Change server')),
+            const PopupMenuItem(value: 'signout', child: Text('Sign out')),
+          ],
+        ),
+      ]),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -391,9 +640,11 @@ class _HomeScreenState extends State<HomeScreen> {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(child: _BorderedPreview(label: 'Raw upload', url: '$kApiBase${result.rawUrl}')),
+                  Expanded(child: _BorderedPreview(
+                      label: 'Your photo', url: '${_session.server}${result.rawUrl}', headers: _session.authHeaders)),
                   const SizedBox(width: 12),
-                  Expanded(child: _BorderedPreview(label: 'Preprocessed', url: '$kApiBase${result.processedUrl}')),
+                  Expanded(child: _BorderedPreview(
+                      label: 'Straightened', url: '${_session.server}${result.processedUrl}', headers: _session.authHeaders)),
                 ],
               ),
               const SizedBox(height: 20),
@@ -424,12 +675,14 @@ class _HomeScreenState extends State<HomeScreen> {
 // thin gold underline along the bottom edge.
 
 class _BrandAppBar extends StatelessWidget implements PreferredSizeWidget {
-  const _BrandAppBar();
+  final List<Widget>? actions;
+  const _BrandAppBar({this.actions});
 
   @override
   Widget build(BuildContext context) {
     return AppBar(
       titleSpacing: 16,
+      actions: actions,
       title: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -536,7 +789,8 @@ class _ReviewBanner extends StatelessWidget {
 class _BorderedPreview extends StatelessWidget {
   final String label;
   final String url;
-  const _BorderedPreview({required this.label, required this.url});
+  final Map<String, String> headers;
+  const _BorderedPreview({required this.label, required this.url, this.headers = const {}});
 
   @override
   Widget build(BuildContext context) {
@@ -556,6 +810,7 @@ class _BorderedPreview extends StatelessWidget {
               aspectRatio: 1,
               child: Image.network(
                 url,
+                headers: headers,
                 fit: BoxFit.cover,
                 errorBuilder: (context, error, stackTrace) => const ColoredBox(
                   color: Color(0xFFF2F2F2),

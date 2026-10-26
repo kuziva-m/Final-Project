@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Internet: needed to call the Flask API. -->
+    <!-- Internet: needed to call the Flask API. Cleartext (http://) traffic is
+         allowed below so the app can reach a laptop on the local Wi-Fi, which
+         has no HTTPS certificate; the online server still uses HTTPS. -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <!-- Camera: for taking photos directly in the app. -->
     <uses-permission android:name="android.permission.CAMERA"/>
@@ -15,7 +17,8 @@
         android:label="Ledger Digitisation"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
-        android:requestLegacyExternalStorage="true">
+        android:requestLegacyExternalStorage="true"
+        android:usesCleartextTraffic="true">
         <activity
             android:name=".MainActivity"
             android:exported="true"
