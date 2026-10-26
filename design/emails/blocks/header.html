@@ -1,0 +1,11 @@
+{#- The top of every email: the CUT emblem and wordmark, as in the app's header. -#}
+{% extends "_base.html" %}
+{% block style %}
+  #block { background: #3150D9; padding: 30px 40px 0; }
+  .brand { display: flex; align-items: center; gap: 14px; color: #FFFFFF; }
+  .brand svg { width: 46px; height: 46px; }
+  .wordmark { font-size: 15px; font-weight: 600; letter-spacing: 0.32em; }
+{% endblock %}
+{% block content %}
+  <div class="brand">{{ emblem }}<span class="wordmark">MSME&nbsp;LEDGER</span></div>
+{% endblock %}

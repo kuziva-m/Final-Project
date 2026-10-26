@@ -1,0 +1,25 @@
+{#- The blue band under the header: what this email is about, in the app's
+    serif, with a line drawing in the style of the "How to use it" steps.
+    One template; render_blocks.py fills in eyebrow, heading and art. -#}
+{% extends "_base.html" %}
+{% from "art.html" import art with context %}
+{% block style %}
+  #block { background: #3150D9; padding: 34px 40px 40px; color: #FFFFFF; }
+  .row { display: flex; align-items: center; gap: 28px; }
+  .words { flex: 1 1 auto; }
+  .eyebrow { font-size: 12px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: #E4B85C; }
+  h1 { margin: 12px 0 0; font-family: "Cormorant Garamond", Garamond, Georgia, serif; font-weight: 600; font-size: 46px; line-height: 1.02; }
+  .rule { width: 44px; height: 3px; margin-top: 20px; background: #E4B85C; }
+  .art { flex: 0 0 150px; }
+  .art svg { width: 150px; height: 150px; }
+{% endblock %}
+{% block content %}
+  <div class="row">
+    <div class="words">
+      <div class="eyebrow">{{ eyebrow }}</div>
+      <h1>{{ heading }}</h1>
+      <div class="rule"></div>
+    </div>
+    <div class="art">{{ art(drawing) }}</div>
+  </div>
+{% endblock %}

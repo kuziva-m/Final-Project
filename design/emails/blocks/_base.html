@@ -1,0 +1,27 @@
+{#- Shared page for every email block. A block is one 600px-wide slice of an
+    email, rendered to a PNG by render_blocks.py: the page measures #block
+    (data-h on <body>) once the fonts have loaded, and the renderer
+    screenshots exactly that height at 2x. Fonts are the app's own files, so
+    nothing is fetched from the internet. -#}
+<!doctype html>
+<html lang="{{ lang }}"><head><meta charset="utf-8">
+<style>
+  @font-face { font-family: "Cormorant Garamond"; font-weight: 600; src: url("{{ fonts }}/cormorant-garamond-latin-600-normal.woff2") format("woff2"); }
+  @font-face { font-family: "Cormorant Garamond"; font-weight: 600; src: url("{{ fonts }}/cormorant-garamond-latin-ext-600-normal.woff2") format("woff2"); unicode-range: U+0100-024F, U+1E00-1EFF; }
+  @font-face { font-family: "Inter"; font-weight: 400; src: url("{{ fonts }}/inter-latin-400-normal.woff2") format("woff2"); }
+  @font-face { font-family: "Inter"; font-weight: 600; src: url("{{ fonts }}/inter-latin-600-normal.woff2") format("woff2"); }
+  html, body { margin: 0; padding: 0; }
+  #block { width: 600px; box-sizing: border-box; font-family: "Inter", "Segoe UI", Arial, sans-serif; -webkit-font-smoothing: antialiased; }
+  .step-art { display: block; color: #FFFFFF; }
+  .step-art .track { stroke: rgba(255, 255, 255, 0.35); }
+  .step-art .progress { stroke: #E4B85C; }
+  .step-art .node { fill: #E4B85C; }
+  {% block style %}{% endblock %}
+</style></head>
+<body><div id="block">{% block content %}{% endblock %}</div>
+<script>
+  document.fonts.ready.then(function () {
+    document.body.setAttribute("data-h", Math.ceil(document.getElementById("block").getBoundingClientRect().height));
+  });
+</script>
+</body></html>

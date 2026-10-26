@@ -1,11 +1,11 @@
 """
-web/mail.py -- send the app's emails (password-reset links).
+web/mail.py -- send the app's emails (built in web/emails.py).
 
 Hugging Face Spaces block outgoing SMTP, so mail goes over HTTPS to Resend
-(resend.com). It needs two secrets:
+(resend.com). It needs two settings:
 
     RESEND_API_KEY    an API key from resend.com
-    LEDGER_MAIL_FROM  the sender, e.g. "MSME Ledger <noreply@yourdomain.com>",
+    LEDGER_MAIL_FROM  the sender, e.g. "MSME Ledger <noreply@mail.digisme.site>",
                       on a domain verified in Resend
 
 Without them email is off, and the forgot-password page says so.
@@ -28,14 +28,16 @@ def enabled() -> bool:
     return bool(os.environ.get("RESEND_API_KEY") and os.environ.get("LEDGER_MAIL_FROM"))
 
 
-def send(to: str, subject: str, text: str) -> bool:
-    """Send a plain-text email; True when Resend accepted it."""
+def send(to: str, subject: str, text: str, html: str | None = None) -> bool:
+    """Send an email (plain text, and HTML when given); True when Resend accepted it."""
     if not enabled():
         return False
+    message = {"from": os.environ["LEDGER_MAIL_FROM"], "to": [to], "subject": subject, "text": text}
+    if html:
+        message["html"] = html
     request = urllib.request.Request(
         _API,
-        data=json.dumps({"from": os.environ["LEDGER_MAIL_FROM"], "to": [to], "subject": subject,
-                         "text": text}).encode("utf-8"),
+        data=json.dumps(message).encode("utf-8"),
         headers={"Authorization": f"Bearer {os.environ['RESEND_API_KEY']}",
                  "Content-Type": "application/json", "User-Agent": "msme-ledger"},
         method="POST",

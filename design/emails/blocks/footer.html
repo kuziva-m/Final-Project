@@ -1,0 +1,13 @@
+{#- The bottom of every email. -#}
+{% extends "_base.html" %}
+{% block style %}
+  #block { background: #FFFFFF; padding: 26px 40px 32px; border-top: 1px solid #D6DCF4; text-align: center; color: #4A5070; }
+  .name { font-size: 13px; font-weight: 600; letter-spacing: 0.22em; color: #0B1040; }
+  .place { margin-top: 6px; font-size: 12px; }
+  .why { margin-top: 14px; font-size: 12px; line-height: 1.5; }
+{% endblock %}
+{% block content %}
+  <div class="name">MSME&nbsp;LEDGER</div>
+  <div class="place">Chinhoyi University of Technology · www.digisme.site</div>
+  <div class="why">{{ _("You're getting this email because of an MSME Ledger account.") }}</div>
+{% endblock %}

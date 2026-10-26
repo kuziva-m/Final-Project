@@ -1,0 +1,38 @@
+{#- Drawings for the email heroes, in the style of the app's "How to use it"
+    step art (web/templates/partials/step_art.html): a 200 grid, one stroke
+    weight, a track ring with gold, the app's amber for anything to check. -#}
+{% from "partials/step_art.html" import step_art %}
+{% macro art(name) -%}
+{%- if name == "scan" -%}
+{#- The page read into a table, one cell to check: the app's step 3 -#}
+{{ step_art(3) }}
+{%- else -%}
+<svg class="step-art" viewBox="0 0 200 200" fill="none" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+  <circle class="track" cx="100" cy="100" r="90"/>
+  <circle class="progress" cx="100" cy="100" r="90"/>
+  {%- if name == "key" %}
+  {#- A key: choosing a new password -#}
+  <g stroke="currentColor">
+    <circle cx="66" cy="100" r="28"/>
+    <circle cx="66" cy="100" r="9"/>
+    <path d="M94 100 H160 M140 100 V120 M156 100 V115"/>
+  </g>
+  {%- elif name == "lock" %}
+  {#- A closed padlock with a tick: the password was changed -#}
+  <g stroke="currentColor">
+    <path d="M76 94 V76 Q76 52 100 52 Q124 52 124 76 V94"/>
+    <path d="M62 94 H138 V150 H62 Z"/>
+  </g>
+  <path d="M84 122 L96 134 L118 110" stroke="#E4B85C"/>
+  {%- elif name == "envelope" %}
+  {#- An envelope with a question: no account at this address -#}
+  <g stroke="currentColor">
+    <path d="M46 72 H150 V140 H46 Z M46 72 L98 110 L150 72"/>
+  </g>
+  <circle cx="150" cy="72" r="17" fill="#E4B85C"/>
+  <path d="M144 66.5 Q144 61 150 61 Q156 61 156 66.5 Q156 70.5 150.5 72.2 V76" stroke="#0B1040" stroke-width="2.8"/>
+  <circle cx="150.5" cy="81.5" r="1.9" fill="#0B1040"/>
+  {%- endif %}
+</svg>
+{%- endif -%}
+{%- endmacro %}

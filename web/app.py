@@ -82,7 +82,7 @@ from preprocessing.clean import preprocess
 from preprocessing.pdf_pages import PdfError, render_pages
 from web.backup import Backup
 from web.exports import build_workbook, document_label
-from web import mail, statement
+from web import emails, mail, statement
 from web.i18n import JS_STRINGS, LANGUAGES, translate
 
 # ---------------------------------------------------------------------------
@@ -344,6 +344,17 @@ def _public_url(endpoint: str, **values) -> str:
     return base + url_for(endpoint, **values) if base else url_for(endpoint, _external=True, **values)
 
 
+def _send_email(to: str, built: tuple[str, str, str]) -> None:
+    """Send an email from web/emails.py in the background, so no page waits on it."""
+    subject, html, text = built
+    threading.Thread(target=mail.send, args=(to, subject, text, html), daemon=True).start()
+
+
+def _email_images() -> str:
+    """Where the emails' design blocks are served from (web/static/email)."""
+    return _public_url("static", filename="email")
+
+
 def _check_login(email: str, password: str) -> tuple[sqlite3.Row | None, str | None]:
     """The user for *email* and *password*, or ``(None, message)``."""
     email = email.strip().lower()
@@ -498,22 +509,15 @@ def forgot_password():
         else:
             user = get_db().execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
             if not _too_many_resets(email):
-                if user is not None:
-                    subject = tr("Reset your MSME Ledger password")
-                    text = tr("Someone asked to reset the password for {email} on MSME Ledger.\n\n"
-                              "To choose a new password, open this link within an hour:\n{link}\n\n"
-                              "If it wasn't you, ignore this email. Your password stays the same.",
-                              email=email, link=_public_url("reset_password", token=_reset_token(user)))
-                else:
-                    subject = tr("No MSME Ledger account for this address")
-                    code = tr("You'll need the sign-up code from the app's owner.") + "\n\n" if _signup_code() else ""
-                    text = tr("Someone asked to reset the password for {email} on MSME Ledger, "
-                              "but there is no account for this address.\n\n"
-                              "If it was you, you can create one here:\n{link}\n\n"
-                              "{code}If it wasn't you, ignore this email.",
-                              email=email, link=_public_url("signup"), code=code)
                 # Sent in the background, so the reply takes as long either way.
-                threading.Thread(target=mail.send, args=(email, subject, text), daemon=True).start()
+                if user is not None:
+                    _send_email(email, emails.password_reset(
+                        _email_images(), email=email,
+                        link=_public_url("reset_password", token=_reset_token(user))))
+                else:
+                    _send_email(email, emails.no_account(
+                        _email_images(), email=email, link=_public_url("signup"),
+                        code_required=bool(_signup_code())))
             sent_to = email
     return render_template("auth.html", mode="forgot", email=email, sent_to=sent_to,
                            mail_on=mail.enabled(), code_required=False)
@@ -541,6 +545,11 @@ def reset_password(token: str):
             with _failed_lock:
                 _failed_logins.pop(user["email"], None)
             _sign_in(db.execute("SELECT * FROM users WHERE id = ?", (user["id"],)).fetchone())
+            if mail.enabled():
+                _send_email(user["email"], emails.password_changed(
+                    _email_images(), email=user["email"],
+                    when=datetime.now(timezone.utc).strftime("%d %b %Y, %H:%M UTC").lstrip("0"),
+                    link=_public_url("forgot_password")))
             flash(tr("Your password is changed and you're signed in. Any other devices were signed out."))
             return redirect(url_for("index"))
     return render_template("auth.html", mode="reset", email=user["email"], code_required=False)
@@ -992,6 +1001,15 @@ def _image_url(name: str | None) -> str | None:
     return None
 
 
+def _cells_and_rows(artifacts: dict) -> tuple[list[str], int]:
+    """Every cell of a read result, and how many rows it has."""
+    tables = artifacts.get("tables")
+    if tables:
+        return ([cell for table in tables for row in table["rows"] for cell in row],
+                sum(len(table["rows"]) for table in tables))
+    return [str(row.get(field, "")) for row in artifacts["rows"] for field in FIELDNAMES], len(artifacts["rows"])
+
+
 def _render_review(artifacts: dict, scan: dict | None = None):
     """The editable review page, for a fresh read or a saved document (*scan*)."""
     tables = artifacts.get("tables")
@@ -1018,11 +1036,7 @@ def _render_review(artifacts: dict, scan: dict | None = None):
             by_page.setdefault(table.get("page") or 1, []).append((t, table))
         groups = [{"page": page, "image": page_urls.get(page), "straight": straight_urls.get(page),
                    "tables": by_page[page]} for page in sorted(by_page)]
-        cells = [cell for table in tables for row in table["rows"] for cell in row]
-        n_rows = sum(len(table["rows"]) for table in tables)
-    else:
-        cells = [str(row.get(field, "")) for row in artifacts["rows"] for field in FIELDNAMES]
-        n_rows = len(artifacts["rows"])
+    cells, n_rows = _cells_and_rows(artifacts)
 
     append_to = None
     if artifacts.get("append_to"):
@@ -1095,7 +1109,20 @@ def process():
             _progress_update(token, stage="error", error=error)
             return jsonify({"error": error}), 400
         artifacts.update(_document_options())
-        _review_path(token).write_text(json.dumps(artifacts, ensure_ascii=False), encoding="utf-8")
+        review_file = _review_path(token)
+        review_file.write_text(json.dumps(artifacts, ensure_ascii=False), encoding="utf-8")
+        # Kept in the backup with its page photos, so the emailed link still
+        # opens after the Space restarts.
+        views = [page.get("view") for page in artifacts.get("pages") or []]
+        backup.mark_dirty([review_file] + [PROCESSED_DIR / name for view in views
+                                            for name in (view, _straight_for(view)) if name])
+        if mail.enabled():
+            cells, n_rows = _cells_and_rows(artifacts)
+            _send_email(g.user["email"], emails.scan_ready(
+                _email_images(), link=_public_url("review", token=token),
+                name=document_label({"name": artifacts.get("doc_name"), "source_file": artifacts["source_file"],
+                                     "id": 0}),
+                pages=max(len(views), 1), rows=n_rows, unsure=sum("?" in cell for cell in cells)))
         review_url = url_for("review", token=token)
         _progress_update(token, stage="done", review_url=review_url)
         return jsonify({"review_url": review_url})
@@ -1137,8 +1164,11 @@ def progress(token: str):
 
 @app.route("/review/<token>")
 def review(token: str):
-    """Show a result read earlier via /process (refresh-safe)."""
+    """Show a result read earlier via /process (refresh-safe; after a restart
+    it comes back from the backup, so the emailed link keeps working)."""
     path = _review_path(token)
+    if path is not None and not path.is_file():
+        backup.fetch_image(path.name, PROCESSED_DIR)
     if path is None or not path.is_file():
         flash(tr("That review could not be found. Please upload the file again."))
         return redirect(url_for("index"))
