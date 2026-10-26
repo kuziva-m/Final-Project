@@ -71,6 +71,11 @@
   <script>
     window.I18N = {{ js_strings|tojson }};
     if (window.top !== window.self) {
+      // Signing in here would create the account but leave you signed out,
+      // so every link and form opens the app in its own tab instead.
+      var base = document.createElement("base");
+      base.target = "_blank";
+      document.head.appendChild(base);
       document.getElementById("framed-note").hidden = false;
       document.getElementById("framed-link").href = window.location.href;
     }
