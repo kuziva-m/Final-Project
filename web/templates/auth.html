@@ -1,10 +1,46 @@
 {% extends "base.html" %}
 {% set signing_up = mode == "signup" %}
-{% block title %}{{ _("Create an account") if signing_up else _("Sign in") }} · MSME Ledger{% endblock %}
+{% set headings = {"signup": _("Create an account"), "login": _("Sign in"),
+                   "forgot": _("Forgot your password?"), "reset": _("Choose a new password")} %}
+{% block title %}{{ headings[mode] }} · MSME Ledger{% endblock %}
 {% block body_class %}page-auth{% endblock %}
 {% block content %}
   <section class="auth">
-    <h1>{{ _("Create an account") if signing_up else _("Sign in") }}</h1>
+    <h1>{{ headings[mode] }}</h1>
+
+    {% if mode == "forgot" %}
+      {% if not mail_on %}
+      <p class="auth-lede">{{ _("Resetting a password by email isn't set up on this app yet. Ask the app's owner for help.") }}</p>
+      {% elif sent_to %}
+      <p class="notice">{{ _("If there is an account for {email}, a link to choose a new password is on its way. It works once, within an hour. Check your spam folder too.", email=sent_to) }}</p>
+      {% else %}
+      <p class="auth-lede">{{ _("Enter your email and we'll send you a link to choose a new password.") }}</p>
+      <form method="post" action="{{ url_for('forgot_password') }}" class="auth-form">
+        <label class="field">
+          <span class="field-label">{{ _("Email") }}</span>
+          <input type="email" name="email" value="{{ email }}" autocomplete="email" required maxlength="254">
+        </label>
+        <button type="submit" class="btn btn-solid">{{ _("Send the link") }}</button>
+      </form>
+      {% endif %}
+      <p class="auth-switch"><a href="{{ url_for('login') }}">{{ _("Back to sign in") }}</a></p>
+
+    {% elif mode == "reset" %}
+    <p class="auth-lede">{{ _("For {email}. Every other device you're signed in on will be signed out.", email=email) }}</p>
+    <form method="post" action="{{ request.path }}" class="auth-form">
+      <label class="field">
+        <span class="field-label">{{ _("New password") }}</span>
+        <input type="password" name="password" required minlength="8" autocomplete="new-password">
+        <span class="field-hint">{{ _("At least 8 characters.") }}</span>
+      </label>
+      <label class="field">
+        <span class="field-label">{{ _("Type it again") }}</span>
+        <input type="password" name="confirm" required minlength="8" autocomplete="new-password">
+      </label>
+      <button type="submit" class="btn btn-solid">{{ _("Save the new password") }}</button>
+    </form>
+
+    {% else %}
     <p class="auth-lede">{{ _("Your scans are saved in your account, and only you can see them.") }}</p>
 
     <form method="post" action="{{ url_for(mode, next=request.args.get('next')) }}" class="auth-form">
@@ -25,6 +61,7 @@
       </label>
       {% endif %}
       <button type="submit" class="btn btn-solid">{{ _("Create account") if signing_up else _("Sign in") }}</button>
+      {% if not signing_up %}<a class="forgot-link" href="{{ url_for('forgot_password') }}">{{ _("Forgot password?") }}</a>{% endif %}
     </form>
 
     <p class="auth-switch">
@@ -34,5 +71,6 @@
       {{ _("New here?") }} <a href="{{ url_for('signup', next=request.args.get('next')) }}">{{ _("Create an account") }}</a>
       {% endif %}
     </p>
+    {% endif %}
   </section>
 {% endblock %}

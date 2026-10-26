@@ -82,7 +82,7 @@ from preprocessing.clean import preprocess
 from preprocessing.pdf_pages import PdfError, render_pages
 from web.backup import Backup
 from web.exports import build_workbook, document_label
-from web import statement
+from web import mail, statement
 from web.i18n import JS_STRINGS, LANGUAGES, translate
 
 # ---------------------------------------------------------------------------
@@ -270,7 +270,8 @@ _api_tokens = URLSafeTimedSerializer(app.secret_key, salt="ledger-api")
 _API_TOKEN_DAYS = 30
 
 # Pages anyone can open; everything else needs a signed-in user.
-_PUBLIC_ENDPOINTS = {"index", "login", "signup", "logout", "set_language", "static", "api_health", "api_login"}
+_PUBLIC_ENDPOINTS = {"index", "login", "signup", "logout", "set_language", "static", "api_health", "api_login",
+                     "forgot_password", "reset_password"}
 
 # Repeated wrong passwords for one email are refused for a while.
 _failed_logins: dict[str, list[float]] = {}
@@ -294,6 +295,53 @@ def _too_many_failures(email: str) -> bool:
 def _record_failure(email: str) -> None:
     with _failed_lock:
         _failed_logins.setdefault(email, []).append(time.time())
+
+
+# Password resets: a signed link, emailed (web/mail.py), that works for an hour
+# and only until the password is changed. A few per email per hour at most.
+_reset_tokens = URLSafeTimedSerializer(app.secret_key, salt="ledger-password-reset")
+_RESET_MINUTES = 60
+_reset_requests: dict[str, list[float]] = {}
+_MAX_RESETS, _RESET_WINDOW = 3, 60 * 60
+
+
+def _password_mark(user: sqlite3.Row) -> str:
+    """Changes whenever the password does, without giving anything of it away."""
+    return hmac.new(app.secret_key.encode(), user["password_hash"].encode(), "sha256").hexdigest()[:16]
+
+
+def _reset_token(user: sqlite3.Row) -> str:
+    return _reset_tokens.dumps({"uid": user["id"], "mark": _password_mark(user)})
+
+
+def _user_for_reset(token: str) -> sqlite3.Row | None:
+    """The user a reset link is for, while it is fresh and unused; else None."""
+    try:
+        data = _reset_tokens.loads(token, max_age=_RESET_MINUTES * 60)
+        uid, mark = data["uid"], str(data["mark"])
+    except (BadSignature, KeyError, TypeError):
+        return None
+    user = get_db().execute("SELECT * FROM users WHERE id = ?", (uid,)).fetchone()
+    if user is None or not hmac.compare_digest(_password_mark(user), mark):
+        return None
+    return user
+
+
+def _too_many_resets(email: str) -> bool:
+    now = time.time()
+    with _failed_lock:
+        recent = [t for t in _reset_requests.get(email, []) if now - t < _RESET_WINDOW] + [now]
+        _reset_requests[email] = recent
+        return len(recent) > _MAX_RESETS
+
+
+def _public_url(endpoint: str, **values) -> str:
+    """An absolute link for an email: LEDGER_PUBLIC_URL (a custom domain) if set,
+    else the Space's own address -- never the Host header a request claims."""
+    base = os.environ.get("LEDGER_PUBLIC_URL", "").strip().rstrip("/")
+    if not base and os.environ.get("SPACE_HOST"):
+        base = "https://" + os.environ["SPACE_HOST"].split(",")[0].strip()
+    return base + url_for(endpoint, **values) if base else url_for(endpoint, _external=True, **values)
 
 
 def _check_login(email: str, password: str) -> tuple[sqlite3.Row | None, str | None]:
@@ -431,6 +479,59 @@ def api_login():
         return jsonify({"error": error}), 401
     token = _api_tokens.dumps({"uid": user["id"], "key": user["session_key"]})
     return jsonify({"token": token, "email": user["email"]})
+
+
+@app.route("/forgot", methods=["GET", "POST"])
+def forgot_password():
+    """Email a link for choosing a new password. The reply is the same whether
+    or not there is an account, so the page can't be used to find accounts."""
+    if g.user:
+        return redirect(url_for("index"))
+    email = request.form.get("email", "").strip().lower()
+    sent_to = None
+    if request.method == "POST" and mail.enabled():
+        if not _EMAIL.fullmatch(email) or len(email) > 254:
+            flash(tr("Enter a valid email address."))
+        else:
+            user = get_db().execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+            if user is not None and not _too_many_resets(email):
+                text = tr("Someone asked to reset the password for {email} on MSME Ledger.\n\n"
+                          "To choose a new password, open this link within an hour:\n{link}\n\n"
+                          "If it wasn't you, ignore this email. Your password stays the same.",
+                          email=email, link=_public_url("reset_password", token=_reset_token(user)))
+                # Sent in the background, so the reply takes as long either way.
+                threading.Thread(target=mail.send, args=(email, tr("Reset your MSME Ledger password"), text),
+                                 daemon=True).start()
+            sent_to = email
+    return render_template("auth.html", mode="forgot", email=email, sent_to=sent_to,
+                           mail_on=mail.enabled(), code_required=False)
+
+
+@app.route("/reset/<token>", methods=["GET", "POST"])
+def reset_password(token: str):
+    """Choose a new password from an emailed link; signs out every other device."""
+    user = _user_for_reset(token)
+    if user is None:
+        flash(tr("That link has expired or has already been used. Ask for a new one."))
+        return redirect(url_for("forgot_password"))
+    if request.method == "POST":
+        password = request.form.get("password", "")
+        if len(password) < _MIN_PASSWORD:
+            flash(tr("Use a password of at least {n} characters.", n=_MIN_PASSWORD))
+        elif password != request.form.get("confirm", ""):
+            flash(tr("The two passwords don't match."))
+        else:
+            db = get_db()
+            db.execute("UPDATE users SET password_hash = ?, session_key = ? WHERE id = ?",
+                       (generate_password_hash(password), secrets.token_hex(16), user["id"]))
+            db.commit()
+            backup.mark_dirty()
+            with _failed_lock:
+                _failed_logins.pop(user["email"], None)
+            _sign_in(db.execute("SELECT * FROM users WHERE id = ?", (user["id"],)).fetchone())
+            flash(tr("Your password is changed and you're signed in. Any other devices were signed out."))
+            return redirect(url_for("index"))
+    return render_template("auth.html", mode="reset", email=user["email"], code_required=False)
 
 
 # ---------------------------------------------------------------------------

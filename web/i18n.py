@@ -200,6 +200,30 @@ STRINGS: dict[str, dict[str, str]] = {
         "Changed {n} cells.": "Masero {n} ashandurwa.",
         "Rename “{old}” in {n} other tables too?": "Shandura “{old}” mumamwe matafura {n} futi?",
         "Rename all": "Shandura ese",
+        "Forgot your password?": "Wakanganwa pasiwedhi yako?",
+        "Forgot password?": "Wakanganwa pasiwedhi?",
+        "Choose a new password": "Sarudza pasiwedhi itsva",
+        "Resetting a password by email isn't set up on this app yet. Ask the app's owner for help.":
+            "Kuchinja pasiwedhi neemail hakusati kwagadzirwa paapp iyi. Kumbira rubatsiro kumuridzi weapp.",
+        "If there is an account for {email}, a link to choose a new password is on its way. It works once, within an hour. Check your spam folder too.":
+            "Kana paine akaundi ye {email}, link yekusarudza pasiwedhi itsva iri munzira. Inoshanda kamwe chete, mukati meawa. Tarisawo muspam.",
+        "Enter your email and we'll send you a link to choose a new password.":
+            "Nyora email yako tichakutumira link yekusarudza pasiwedhi itsva.",
+        "Send the link": "Tumira link",
+        "Back to sign in": "Dzokera kunopinda",
+        "For {email}. Every other device you're signed in on will be signed out.":
+            "Ye {email}. Zvimwe zvishandiso zvese zvawakapinda nazvo zvichabudiswa.",
+        "New password": "Pasiwedhi itsva",
+        "Type it again": "Inyore zvakare",
+        "Save the new password": "Chengetedza pasiwedhi itsva",
+        "Reset your MSME Ledger password": "Chinja pasiwedhi yako yeMSME Ledger",
+        "Someone asked to reset the password for {email} on MSME Ledger.\n\nTo choose a new password, open this link within an hour:\n{link}\n\nIf it wasn't you, ignore this email. Your password stays the same.":
+            "Mumwe munhu akumbira kuchinja pasiwedhi ye {email} paMSME Ledger.\n\nKuti usarudze pasiwedhi itsva, vhura link iyi mukati meawa:\n{link}\n\nKana usiri iwe, regera email iyi. Pasiwedhi yako inoramba yakadaro.",
+        "That link has expired or has already been used. Ask for a new one.":
+            "Link iyoyo yapera kana kuti yatoshandiswa. Kumbira imwe itsva.",
+        "The two passwords don't match.": "Pasiwedhi mbiri hadzienderani.",
+        "Your password is changed and you're signed in. Any other devices were signed out.":
+            "Pasiwedhi yako yachinjwa uye wapinda. Zvimwe zvishandiso zvabudiswa.",
         "Bank statement format": "Chimiro chesitatimendi chebhanga",
         "Your records laid out the way bank statements are, so a lender can read them beside your bank statements: date, description, money out, money in and a running balance.": "Zvinyorwa zvako zvakarongwa sezvinoita masitatimendi ebhanga, kuti anokweretesa azviverenge pamwe nemasitatimendi ako ebhanga: zuva, tsananguro, mari yabuda, mari yapinda uye bharanzi inoramba ichiverengwa.",
         "It is made from your own records, so it is not a bank statement, and every copy says so.": "Rinogadzirwa kubva muzvinyorwa zvako, saka harisi sitatimendi rebhanga, uye kopi imwe neimwe inodaro.",
@@ -458,6 +482,30 @@ STRINGS: dict[str, dict[str, str]] = {
         "Changed {n} cells.": "Kuguqulwe amaseli angu-{n}.",
         "Rename “{old}” in {n} other tables too?": "Guqula “{old}” lakwamanye amathebula angu-{n}?",
         "Rename all": "Guqula wonke",
+        "Forgot your password?": "Ukhohlwe iphasiwedi yakho?",
+        "Forgot password?": "Ukhohlwe iphasiwedi?",
+        "Choose a new password": "Khetha iphasiwedi entsha",
+        "Resetting a password by email isn't set up on this app yet. Ask the app's owner for help.":
+            "Ukuntshintsha iphasiwedi nge-email akukahlelwa kule app. Cela usizo kumnikazi we-app.",
+        "If there is an account for {email}, a link to choose a new password is on its way. It works once, within an hour. Check your spam folder too.":
+            "Nxa kukhona i-akhawunti ka-{email}, ilinki yokukhetha iphasiwedi entsha isendleleni. Isebenza kanye kuphela, phakathi kwehora. Hlola le-spam.",
+        "Enter your email and we'll send you a link to choose a new password.":
+            "Faka i-email yakho sizakuthumela ilinki yokukhetha iphasiwedi entsha.",
+        "Send the link": "Thumela ilinki",
+        "Back to sign in": "Buyela ekungeneni",
+        "For {email}. Every other device you're signed in on will be signed out.":
+            "Ka-{email}. Zonke ezinye izinto ongene ngazo zizaphuma.",
+        "New password": "Iphasiwedi entsha",
+        "Type it again": "Yibhale futhi",
+        "Save the new password": "Gcina iphasiwedi entsha",
+        "Reset your MSME Ledger password": "Ntshintsha iphasiwedi yakho ye-MSME Ledger",
+        "Someone asked to reset the password for {email} on MSME Ledger.\n\nTo choose a new password, open this link within an hour:\n{link}\n\nIf it wasn't you, ignore this email. Your password stays the same.":
+            "Omunye ucele ukuntshintsha iphasiwedi ka-{email} ku-MSME Ledger.\n\nUkuze ukhethe iphasiwedi entsha, vula le linki phakathi kwehora:\n{link}\n\nNxa kungasuwe, yekela le-email. Iphasiwedi yakho ihlala injalo.",
+        "That link has expired or has already been used. Ask for a new one.":
+            "Leyo linki iphelelwe yisikhathi kumbe isisetshenzisiwe. Cela entsha.",
+        "The two passwords don't match.": "Amaphasiwedi omabili kawafanani.",
+        "Your password is changed and you're signed in. Any other devices were signed out.":
+            "Iphasiwedi yakho intshintshiwe njalo ungenile. Ezinye izinto ziphumile.",
         "Bank statement format": "Isimo sesitatimende sebhange",
         "Your records laid out the way bank statements are, so a lender can read them beside your bank statements: date, description, money out, money in and a running balance.": "Okubhaliweyo kwakho kuhlelwe njengesitatimende sebhange, ukuze oboleka imali akufunde eceleni kwezitatimende zakho zebhange: usuku, incazelo, imali ephumayo, imali engenayo lebhalansi eqhubekayo.",
         "It is made from your own records, so it is not a bank statement, and every copy says so.": "Kwenziwa ngokubhaliweyo kwakho, ngakho akusiso isitatimende sebhange, njalo ikhophi ngayinye iyakutsho.",

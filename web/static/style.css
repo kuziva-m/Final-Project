@@ -1355,6 +1355,7 @@ tfoot td.total-label {
 .auth-form .field { width: 100%; }
 .auth-switch { margin: 2rem 0 0; }
 .auth-switch a { font-weight: 600; text-underline-offset: 4px; }
+.forgot-link { color: var(--white); font-weight: 600; text-underline-offset: 4px; }
 
 .see-all { margin: 1.25rem 0 0; }
 .see-all a { font-weight: 600; text-underline-offset: 4px; }
