@@ -221,6 +221,10 @@ STRINGS: dict[str, dict[str, str]] = {
             "Mumwe munhu akumbira kuchinja pasiwedhi ye {email} paMSME Ledger.\n\nKuti usarudze pasiwedhi itsva, vhura link iyi mukati meawa:\n{link}\n\nKana usiri iwe, regera email iyi. Pasiwedhi yako inoramba yakadaro.",
         "That link has expired or has already been used. Ask for a new one.":
             "Link iyoyo yapera kana kuti yatoshandiswa. Kumbira imwe itsva.",
+        "No MSME Ledger account for this address": "Hapana akaundi yeMSME Ledger yekero iyi",
+        "You'll need the sign-up code from the app's owner.": "Uchada kodhi yekunyoresa kubva kumuridzi weapp.",
+        "Someone asked to reset the password for {email} on MSME Ledger, but there is no account for this address.\n\nIf it was you, you can create one here:\n{link}\n\n{code}If it wasn't you, ignore this email.":
+            "Mumwe munhu akumbira kuchinja pasiwedhi ye {email} paMSME Ledger, asi hapana akaundi yekero iyi.\n\nKana ari iwe, unogona kuvhura akaundi pano:\n{link}\n\n{code}Kana usiri iwe, regera email iyi.",
         "The two passwords don't match.": "Pasiwedhi mbiri hadzienderani.",
         "Your password is changed and you're signed in. Any other devices were signed out.":
             "Pasiwedhi yako yachinjwa uye wapinda. Zvimwe zvishandiso zvabudiswa.",
@@ -503,6 +507,10 @@ STRINGS: dict[str, dict[str, str]] = {
             "Omunye ucele ukuntshintsha iphasiwedi ka-{email} ku-MSME Ledger.\n\nUkuze ukhethe iphasiwedi entsha, vula le linki phakathi kwehora:\n{link}\n\nNxa kungasuwe, yekela le-email. Iphasiwedi yakho ihlala injalo.",
         "That link has expired or has already been used. Ask for a new one.":
             "Leyo linki iphelelwe yisikhathi kumbe isisetshenzisiwe. Cela entsha.",
+        "No MSME Ledger account for this address": "Akula i-akhawunti ye-MSME Ledger yalelikheli",
+        "You'll need the sign-up code from the app's owner.": "Uzadinga ikhodi yokubhalisa kumnikazi we-app.",
+        "Someone asked to reset the password for {email} on MSME Ledger, but there is no account for this address.\n\nIf it was you, you can create one here:\n{link}\n\n{code}If it wasn't you, ignore this email.":
+            "Omunye ucele ukuntshintsha iphasiwedi ka-{email} ku-MSME Ledger, kodwa akula i-akhawunti yalelikheli.\n\nNxa kunguwe, ungavula i-akhawunti lapha:\n{link}\n\n{code}Nxa kungasuwe, yekela le-email.",
         "The two passwords don't match.": "Amaphasiwedi omabili kawafanani.",
         "Your password is changed and you're signed in. Any other devices were signed out.":
             "Iphasiwedi yakho intshintshiwe njalo ungenile. Ezinye izinto ziphumile.",

@@ -484,7 +484,10 @@ def api_login():
 @app.route("/forgot", methods=["GET", "POST"])
 def forgot_password():
     """Email a link for choosing a new password. The reply is the same whether
-    or not there is an account, so the page can't be used to find accounts."""
+    or not there is an account, so the page can't be used to find accounts.
+
+    An address with no account gets an email saying so, with a link to sign
+    up: only the owner of the address learns there is no account."""
     if g.user:
         return redirect(url_for("index"))
     email = request.form.get("email", "").strip().lower()
@@ -494,14 +497,23 @@ def forgot_password():
             flash(tr("Enter a valid email address."))
         else:
             user = get_db().execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
-            if user is not None and not _too_many_resets(email):
-                text = tr("Someone asked to reset the password for {email} on MSME Ledger.\n\n"
-                          "To choose a new password, open this link within an hour:\n{link}\n\n"
-                          "If it wasn't you, ignore this email. Your password stays the same.",
-                          email=email, link=_public_url("reset_password", token=_reset_token(user)))
+            if not _too_many_resets(email):
+                if user is not None:
+                    subject = tr("Reset your MSME Ledger password")
+                    text = tr("Someone asked to reset the password for {email} on MSME Ledger.\n\n"
+                              "To choose a new password, open this link within an hour:\n{link}\n\n"
+                              "If it wasn't you, ignore this email. Your password stays the same.",
+                              email=email, link=_public_url("reset_password", token=_reset_token(user)))
+                else:
+                    subject = tr("No MSME Ledger account for this address")
+                    code = tr("You'll need the sign-up code from the app's owner.") + "\n\n" if _signup_code() else ""
+                    text = tr("Someone asked to reset the password for {email} on MSME Ledger, "
+                              "but there is no account for this address.\n\n"
+                              "If it was you, you can create one here:\n{link}\n\n"
+                              "{code}If it wasn't you, ignore this email.",
+                              email=email, link=_public_url("signup"), code=code)
                 # Sent in the background, so the reply takes as long either way.
-                threading.Thread(target=mail.send, args=(email, tr("Reset your MSME Ledger password"), text),
-                                 daemon=True).start()
+                threading.Thread(target=mail.send, args=(email, subject, text), daemon=True).start()
             sent_to = email
     return render_template("auth.html", mode="forgot", email=email, sent_to=sent_to,
                            mail_on=mail.enabled(), code_required=False)
