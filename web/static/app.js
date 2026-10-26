@@ -844,8 +844,27 @@
       var img = frame.querySelector("img");
       var approx = viewer.querySelector(".viewer-approx");
       var select = viewer.querySelector(".viewer-select");
+      var views = viewer.querySelector(".viewer-views");
+      var label = viewer.querySelector(".viewer-label");
+      var photo = img.getAttribute("src");
+      var showing = "photo";
       var zoom = 1;
       viewer.querySelector(".viewer-zoom").hidden = false;
+
+      // Photo / Straightened, for pages that have a straightened copy.
+      function showView(kind) {
+        var straight = select ? select.options[select.selectedIndex].getAttribute("data-straight")
+                              : viewer.getAttribute("data-straight");
+        showing = kind === "straight" && straight ? "straight" : "photo";
+        var src = showing === "straight" ? straight : (select ? select.value : photo);
+        if (img.getAttribute("src") !== src) img.src = src;
+        views.hidden = !straight;
+        if (label) label.hidden = !!straight;
+        Array.prototype.forEach.call(views.querySelectorAll("[data-view]"), function (button) {
+          button.setAttribute("aria-pressed", String(button.getAttribute("data-view") === showing));
+        });
+      }
+      showView("photo");
 
       function setZoom(value, focusY, focusX) {
         zoom = Math.max(1, Math.min(5, value));
@@ -859,6 +878,8 @@
       }
 
       viewer.addEventListener("click", function (e) {
+        var view = e.target.closest("[data-view]");
+        if (view) return showView(view.getAttribute("data-view"));
         var button = e.target.closest("[data-zoom]");
         if (!button) return;
         var kind = button.getAttribute("data-zoom");
@@ -866,7 +887,7 @@
       });
       if (select) {
         select.addEventListener("change", function () {
-          img.src = select.value;
+          showView(showing);
           setZoom(1);
         });
       }
@@ -1253,7 +1274,25 @@
     }
   }
 
+  // --- Bank statement format ---------------------------------------------------------------
+
+  function initStatement() {
+    var form = document.getElementById("statement-form");
+    var print = document.getElementById("print-statement");
+    if (print) {
+      print.hidden = false;
+      print.addEventListener("click", function () { window.print(); });
+    }
+    // A new choice of what a column holds shows straight away.
+    if (form) {
+      form.addEventListener("change", function (e) {
+        if (e.target.tagName === "SELECT") form.submit();
+      });
+    }
+  }
+
   initUpload();
   initReview();
   initDocument();
+  initStatement();
 })();

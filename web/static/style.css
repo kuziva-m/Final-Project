@@ -957,6 +957,22 @@ td input[type="text"]:focus {
 
 .viewer-zoom button:hover { background: var(--white); color: var(--blue); }
 
+/* Photo / Straightened: the page as photographed, or straightened and sharpened */
+.viewer-views { display: flex; }
+
+.viewer-views button {
+  padding: 0.45rem 0.75rem;
+  border: 1.5px solid var(--white);
+  background: transparent;
+  color: var(--white);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.viewer-views button + button { border-left: 0; }
+.viewer-views button[aria-pressed="true"] { background: var(--white); color: var(--blue); }
+
 .table-block + .table-block { margin-top: 3rem; }
 
 .table-tools {
@@ -1137,23 +1153,6 @@ tfoot td.total-label {
 .details dt { font-weight: 600; }
 .details dd { margin: 0; }
 .details .filename { word-break: break-all; }
-
-.straightened { margin: 0; max-width: 520px; }
-
-.straightened figcaption {
-  margin-bottom: 0.5rem;
-  font-size: 0.78rem;
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
-.straightened img {
-  display: block;
-  width: 100%;
-  padding: 0.6rem;
-  background: var(--white);
-}
 
 /* ---------------------------------------------------------------------- */
 /* Document page                                                            */
@@ -1404,6 +1403,109 @@ tfoot td.total-label {
 }
 
 /* ---------------------------------------------------------------------- */
+/* Bank statement format                                                    */
+/* ---------------------------------------------------------------------- */
+
+.back-link { margin: 0 0 1rem; }
+.back-link a { color: var(--white); font-weight: 600; text-underline-offset: 4px; }
+
+.statement-lede { max-width: 46rem; margin: 0 0 1rem; font-size: 1.1rem; }
+.statement-page .notice { max-width: 46rem; }
+
+.statement-fields { display: flex; flex-wrap: wrap; gap: 1.25rem 2rem; margin-bottom: 1.5rem; }
+.field-short { width: 10rem; }
+
+.statement-fields select,
+.statement-roles select {
+  padding: 0.6rem 0.7rem;
+  border: 1.5px solid var(--line);
+  border-radius: 0;
+  background: var(--blue);
+  color: var(--white);
+  font: inherit;
+}
+
+.statement-roles select { width: 100%; min-width: 7rem; border-color: var(--rule); background: var(--white); color: var(--ink); }
+.statement-roles { max-height: none; margin-bottom: 1.25rem; }
+.statement-roles table { min-width: 0; }
+.statement-roles tbody td { padding: 0.5rem 1rem; }
+.statement-roles td:last-child { width: 40%; }
+.statement-examples { color: #4A5070; }
+
+.statement-actions { margin: 2rem 0 0.5rem; }
+
+/* The statement itself: paper, like a printed bank statement */
+.statement {
+  margin-top: 1.5rem;
+  padding: clamp(1rem, 3vw, 2.25rem);
+  background: var(--white);
+  color: var(--ink);
+  box-shadow: 12px 12px 0 var(--navy);
+}
+
+.statement-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 1rem 2rem;
+  padding-bottom: 1rem;
+  border-bottom: 2px solid var(--navy);
+}
+
+.statement h2 { margin: 0; font-family: var(--serif); font-size: 1.9rem; color: var(--navy); }
+.statement-disclaimer { margin: 0.35rem 0 0; font-size: 0.85rem; font-style: italic; color: #6E6A78; }
+
+.statement-details {
+  display: grid;
+  grid-template-columns: max-content auto;
+  gap: 0.15rem 1rem;
+  margin: 0;
+  font-size: 0.92rem;
+}
+
+.statement-details dt { font-weight: 600; }
+.statement-details dd { margin: 0; }
+
+.statement-totals {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 1rem;
+  margin: 1rem 0 1.25rem;
+}
+
+.statement-totals div { padding: 0.6rem 0.8rem; background: #EEF0FA; }
+.statement-totals dt { font-size: 0.75rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #4A5070; }
+.statement-totals dd { margin: 0.2rem 0 0; font-size: 1.2rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.statement-scroll { overflow-x: auto; }
+.statement table { min-width: 640px; font-size: 0.92rem; }
+.statement thead th { position: static; padding: 0.6rem 0.75rem; letter-spacing: 0.06em; }
+.statement tbody td { padding: 0.45rem 0.75rem; border-bottom: 1px solid #E3E6F2; }
+.statement tbody td:first-child { border-right: 0; white-space: nowrap; }
+.statement tbody td:nth-child(2) { min-width: 11rem; }
+.statement tbody tr:hover { background: transparent; }
+.statement tbody tr:nth-child(even) { background: #F7F8FC; }
+.statement .num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.statement-edge td { font-weight: 600; background: #EEF0FA; }
+.statement-empty { margin: 1rem 0; }
+.statement-foot { margin: 1rem 0 0; font-size: 0.8rem; color: #6E6A78; }
+
+@media print {
+  body { background: #FFFFFF; color: #000000; }
+  .site-header, .site-footer, .framed-note, .flashes, .toast, .back-link, .statement-page > h1,
+  .statement-lede, .statement-page .notice, .statement-form, .statement-actions, .statement-page .doc-note {
+    display: none !important;
+  }
+  .doc { padding: 0; }
+  .statement { margin: 0; padding: 0; box-shadow: none; }
+  .statement-scroll { overflow: visible; }
+  .statement table { min-width: 0; }
+  .statement thead { display: table-header-group; }
+  .statement tr { break-inside: avoid; }
+  .statement-totals div, .statement-edge td, .statement thead th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+
+/* ---------------------------------------------------------------------- */
 /* Smaller screens                                                          */
 /* ---------------------------------------------------------------------- */
 
@@ -1449,6 +1551,7 @@ tfoot td.total-label {
   .col-tools button { width: 2.5rem; height: 2.5rem; }
   .js .rows-form[data-mode="tables"] thead th input[type="text"] { width: calc(100% - 5.4rem); }
   .viewer-zoom button { min-width: 3rem; min-height: 2.75rem; }
+  .viewer-views button { min-height: 2.75rem; }
   .nav a:not(.btn) { padding: 0.5rem 0; }
 
   .page-home .thumb-bar {
@@ -1476,6 +1579,10 @@ tfoot td.total-label {
   .find-close { position: absolute; top: 0; right: 0; margin: 0; }
   .find-status { margin-left: 0; flex: 1 1 auto; }
   .page-review .toast { bottom: calc(var(--actionbar-h, 4rem) + 1.5rem); }
+  .statement-roles thead th { padding: 0.7rem 0.6rem; letter-spacing: 0.04em; }
+  .statement-roles tbody td { padding: 0.5rem 0.6rem; }
+  .statement-roles select { min-width: 6rem; }
+  .statement-roles td:first-child { word-break: break-word; }
   .page-home .site-footer { padding-bottom: 6rem; }
 
   .site-footer { flex-wrap: wrap; }

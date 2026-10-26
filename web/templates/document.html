@@ -13,6 +13,7 @@
       <button type="button" class="btn btn-outline" id="share-file" data-url="{{ xlsx_url }}" data-filename="{{ download_stem }}.xlsx" data-title="{{ summary.label }}" hidden>{{ _("Share") }}</button>
       <button type="button" class="btn btn-outline" id="copy-all" hidden>{{ _("Copy all tables") }}</button>
       <a class="btn btn-outline" href="{{ url_for('edit_document', scan_id=scan.id) }}">{{ _("Edit") }}</a>
+      <a class="btn btn-outline" href="{{ url_for('document_statement', scan_id=scan.id) }}">{{ _("Bank statement format") }}</a>
     </div>
     <p class="more-downloads">
       {{ _("Also:") }}

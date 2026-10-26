@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}{{ _("Bank statement format") }} · {{ label }} · MSME Ledger{% endblock %}
+{% block body_class %}page-statement{% endblock %}
+
+{% macro money(value) -%}{{ "{:,.2f}".format(value) }}{%- endmacro %}
+
+{% block content %}
+  {% set role_names = {"date": _("Date"), "description": _("Description"), "reference": _("Reference"),
+                       "in": _("Money in"), "out": _("Money out"), "signed": _("Money in and out (minus is out)"),
+                       "skip": _("Leave out")} %}
+  <section class="doc statement-page">
+    <p class="back-link"><a href="{{ url_for('document', scan_id=scan.id) }}">‹ {{ label }}</a></p>
+    <h1>{{ _("Bank statement format") }}</h1>
+    <p class="statement-lede">{{ _("Your records laid out the way bank statements are, so a lender can read them beside your bank statements: date, description, money out, money in and a running balance.") }}</p>
+    <p class="notice">{{ _("It is made from your own records, so it is not a bank statement, and every copy says so.") }}</p>
+
+    <form method="get" class="statement-form" id="statement-form">
+      <div class="statement-fields">
+        <label class="field">
+          <span class="field-label">{{ _("Business name") }}</span>
+          <input type="text" name="business" value="{{ business }}" maxlength="120">
+        </label>
+        <label class="field field-short">
+          <span class="field-label">{{ _("Currency") }}</span>
+          <select name="currency">{% for code in currencies %}<option{% if code == currency %} selected{% endif %}>{{ code }}</option>{% endfor %}</select>
+        </label>
+        <label class="field field-short">
+          <span class="field-label">{{ _("Opening balance") }}</span>
+          <input type="text" name="opening" value="{{ opening_text }}" inputmode="decimal" placeholder="0.00" maxlength="30">
+        </label>
+      </div>
+
+      <h2>{{ _("What each column holds") }}</h2>
+      <div class="sheet statement-roles">
+        <table>
+          <thead><tr><th scope="col">{{ _("Column") }}</th><th scope="col">{{ _("For example") }}</th><th scope="col">{{ _("Use as") }}</th></tr></thead>
+          <tbody>
+            {% for column in columns %}
+            <tr>
+              <td>{{ column.heading }}</td>
+              <td class="statement-examples">{{ column.examples|join(" · ") }}</td>
+              <td>
+                <select name="c{{ loop.index0 }}" aria-label="{{ _('Use as') }}: {{ column.heading }}">
+                  {% for role in roles %}<option value="{{ role }}"{% if role == column.role %} selected{% endif %}>{{ role_names[role] }}</option>{% endfor %}
+                </select>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <button type="submit" class="btn btn-outline">{{ _("Update") }}</button>
+    </form>
+
+    <div class="doc-actions statement-actions">
+      <a class="btn btn-solid" href="{{ url_for('document_statement', scan_id=scan.id, download='xlsx', **settings) }}" download>{{ _("Download Excel") }}</a>
+      <a class="btn btn-outline" href="{{ url_for('document_statement', scan_id=scan.id, download='csv', **settings) }}" download>{{ _("Download CSV") }}</a>
+      <button type="button" class="btn btn-outline" id="print-statement" hidden>{{ _("Print or save as PDF") }}</button>
+    </div>
+    {% if st.left_out %}
+    <p class="doc-note">{{ _("1 row left out: it has no amount in a Money in or Money out column.") if st.left_out == 1 else _("{n} rows left out: they have no amount in a Money in or Money out column.", n=st.left_out) }}</p>
+    {% endif %}
+
+    {# The statement itself is in English, as banks use; it matches the downloads. #}
+    <article class="statement" lang="en" aria-label="{{ title_en }}">
+      <header class="statement-head">
+        <div>
+          <h2>{{ title_en }}</h2>
+          <p class="statement-disclaimer">{{ not_a_bank }}</p>
+        </div>
+        <dl class="statement-details">
+          <dt>Business</dt><dd>{{ business }}</dd>
+          <dt>Currency</dt><dd>{{ currency }}</dd>
+          <dt>Period</dt><dd>{{ period or "–" }}</dd>
+          <dt>Prepared on</dt><dd>{{ prepared }}</dd>
+          <dt>Transactions</dt><dd>{{ st.lines|length }}</dd>
+        </dl>
+      </header>
+      <dl class="statement-totals">
+        <div><dt>Opening balance</dt><dd>{{ money(st.opening) }}</dd></div>
+        <div><dt>Total money in (credits)</dt><dd>{{ money(st.total_in) }}</dd></div>
+        <div><dt>Total money out (debits)</dt><dd>{{ money(st.total_out) }}</dd></div>
+        <div><dt>Closing balance</dt><dd>{{ money(st.closing) }}</dd></div>
+      </dl>
+      {% if st.lines %}
+      <div class="statement-scroll">
+        <table>
+          <thead><tr>{% for heading in columns_en %}<th scope="col"{% if loop.index > 3 %} class="num"{% endif %}>{{ heading }}</th>{% endfor %}</tr></thead>
+          <tbody>
+            <tr class="statement-edge"><td></td><td>Opening balance</td><td></td><td></td><td></td><td class="num">{{ money(st.opening) }}</td></tr>
+            {% for line in st.lines %}
+            <tr>
+              <td>{{ line.date.strftime("%d/%m/%Y") if line.date else "" }}</td>
+              <td>{{ line.description }}</td>
+              <td>{{ line.reference }}</td>
+              <td class="num">{{ money(line.out) if line.out else "" }}</td>
+              <td class="num">{{ money(line["in"]) if line["in"] else "" }}</td>
+              <td class="num">{{ money(line.balance) }}</td>
+            </tr>
+            {% endfor %}
+            <tr class="statement-edge"><td></td><td>Closing balance</td><td></td><td class="num">{{ money(st.total_out) }}</td><td class="num">{{ money(st.total_in) }}</td><td class="num">{{ money(st.closing) }}</td></tr>
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="statement-empty" lang="{{ lang }}">{{ _("No entries yet. Choose which columns hold money in and money out.") }}</p>
+      {% endif %}
+      <p class="statement-foot">{{ not_a_bank }}</p>
+    </article>
+  </section>
+{% endblock %}

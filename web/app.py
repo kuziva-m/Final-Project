@@ -82,6 +82,7 @@ from preprocessing.clean import preprocess
 from preprocessing.pdf_pages import PdfError, render_pages
 from web.backup import Backup
 from web.exports import build_workbook, document_label
+from web import statement
 from web.i18n import JS_STRINGS, LANGUAGES, translate
 
 # ---------------------------------------------------------------------------
@@ -521,6 +522,29 @@ def _thumb_for(view_name: str | None) -> str | None:
     return None
 
 
+# Scans this short show each page's straightened, sharpened copy (what
+# Tesseract reads) beside its table; longer ones skip the extra work.
+STRAIGHTENED_MAX_PAGES = 4
+
+
+def _write_straight(cleaned, stem: str) -> None:
+    """A viewing-size copy of a page's cleaned image, named after its viewing JPEG."""
+    h, w = cleaned.shape[:2]
+    scale = min(1.0, _VIEW_EDGE / max(h, w))
+    small = cleaned if scale >= 1.0 else cv2.resize(
+        cleaned, (max(1, round(w * scale)), max(1, round(h * scale))), interpolation=cv2.INTER_AREA)
+    cv2.imwrite(str(PROCESSED_DIR / f"{stem}_straight.png"), small)
+
+
+def _straight_for(view_name: str | None) -> str | None:
+    """The straightened copy that goes with a page's viewing JPEG, if there is one."""
+    if view_name and view_name.endswith("_view.jpg"):
+        straight = view_name[: -len("_view.jpg")] + "_straight.png"
+        if (PROCESSED_DIR / straight).is_file() or backup.has_image(straight):
+            return straight
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Reading progress -- which pages of an upload are done, for the waiting
 # screen. Kept in memory: the Space runs a single server process.
@@ -594,18 +618,25 @@ def _run_pipeline_on_file(source_path: Path, detect_tables: bool = False,
     else:
         page_paths, total_pages = [source_path], 1
 
+    short_scan = len(page_paths) <= STRAIGHTENED_MAX_PAGES
+
     def clean_page(page_path: Path) -> Path | None:
         img = cv2.imread(str(page_path), cv2.IMREAD_UNCHANGED)
         if img is None:
             return None
         clean_path = PROCESSED_DIR / f"{page_path.stem}_clean.png"
-        preprocess(img, save_path=clean_path)
+        cleaned = preprocess(img, save_path=clean_path)
+        if short_scan:
+            _write_straight(cleaned, page_path.stem)
         return clean_path
 
     first_clean = clean_page(page_paths[0])
     if first_clean is None:
         source_path.unlink(missing_ok=True)
         return None, tr("Could not read that image. It may be corrupt or an unsupported format.")
+    cleaned = {0: first_clean}
+    if short_scan:
+        cleaned.update({i: clean_page(path) for i, path in enumerate(page_paths[1:], start=1)})
 
     pages = [{"page": n, **_page_images(path)} for n, path in enumerate(page_paths, start=1)]
     files = {
@@ -654,7 +685,7 @@ def _run_pipeline_on_file(source_path: Path, detect_tables: bool = False,
         fallback_pages = page_paths[:MAX_FALLBACK_PDF_PAGES]
         _progress_update(token, total=len(fallback_pages), done=set(), fallback=True)
         for i, page_path in enumerate(fallback_pages):
-            clean_path = first_clean if i == 0 else clean_page(page_path)
+            clean_path = cleaned[i] if i in cleaned else clean_page(page_path)
             if clean_path is not None:
                 tesseract_text, easyocr_text = run_engines(page_path, processed_path=clean_path)
                 page_rows, page_prov = fuse_from_texts(tesseract_text, easyocr_text, return_provenance=True)
@@ -819,23 +850,28 @@ def _render_review(artifacts: dict, scan: dict | None = None):
     """The editable review page, for a fresh read or a saved document (*scan*)."""
     tables = artifacts.get("tables")
     page_urls: dict[int, str] = {}
-    for page in artifacts.get("pages") or []:
-        url = _image_url(page.get("view"))
+    straight_urls: dict[int, str] = {}
+    views = [(page["page"], page.get("view")) for page in artifacts.get("pages") or []]
+    views += [(table.get("page") or 1, table.get("image")) for table in tables or []]
+    for page, view in views:
+        url = _image_url(view)
         if url:
-            page_urls[page["page"]] = url
-    for table in tables or []:
-        url = _image_url(table.get("image"))
-        if url:
-            page_urls.setdefault(table.get("page") or 1, url)
+            page_urls.setdefault(page, url)
+            straight = _image_url(_straight_for(view))
+            if straight:
+                straight_urls.setdefault(page, straight)
     if 1 not in page_urls and artifacts.get("raw_filename"):
         page_urls[1] = url_for("uploaded_file", filename=artifacts["raw_filename"])
+    if len(page_urls) > STRAIGHTENED_MAX_PAGES:
+        straight_urls = {}
 
     groups = []
     if tables:
         by_page: dict[int, list] = {}
         for t, table in enumerate(tables):
             by_page.setdefault(table.get("page") or 1, []).append((t, table))
-        groups = [{"page": page, "image": page_urls.get(page), "tables": by_page[page]} for page in sorted(by_page)]
+        groups = [{"page": page, "image": page_urls.get(page), "straight": straight_urls.get(page),
+                   "tables": by_page[page]} for page in sorted(by_page)]
         cells = [cell for table in tables for row in table["rows"] for cell in row]
         n_rows = sum(len(table["rows"]) for table in tables)
     else:
@@ -854,13 +890,11 @@ def _render_review(artifacts: dict, scan: dict | None = None):
         tables=tables,
         groups=groups,
         rows=artifacts.get("rows"),
-        page_images=sorted(page_urls.items()),
+        page_images=[(page, url, straight_urls.get(page)) for page, url in sorted(page_urls.items())],
         source_file=artifacts["source_file"],
         used_engine=used_engine,
         free_reader=used_engine.startswith(("fused", "none")),
         fallback_reason=artifacts.get("fallback_reason", ""),
-        processed_url=(url_for("processed_file", filename=artifacts["processed_filename"])
-                       if artifacts.get("processed_filename") else None),
         pages_note=artifacts.get("pages_note", ""),
         doc_name=(scan["name"] if scan else artifacts.get("doc_name")) or "",
         scan=scan,
@@ -1089,6 +1123,7 @@ def save_tables():
     # Keep the database and these pages' photos in the backup.
     photos = [PROCESSED_DIR / t["image"] for t in tables if t["image"]]
     photos += [PROCESSED_DIR / thumb for t in tables if (thumb := _thumb_for(t["image"]))]
+    photos += [PROCESSED_DIR / straight for t in tables if (straight := _straight_for(t["image"]))]
     backup.mark_dirty(photos)
 
     flash(message)
@@ -1125,9 +1160,10 @@ def document(scan_id: int):
 
 
 def _photo_names(tables: list[dict]) -> set[str]:
-    """Page photos and thumbnails that *tables* use."""
+    """Page photos, thumbnails and straightened copies that *tables* use."""
     names = {t["image"] for t in tables if t.get("image")}
-    return names | {name[: -len("_view.jpg")] + "_thumb.jpg" for name in names if name.endswith("_view.jpg")}
+    stems = [name[: -len("_view.jpg")] for name in names if name.endswith("_view.jpg")]
+    return names | {stem + "_thumb.jpg" for stem in stems} | {stem + "_straight.png" for stem in stems}
 
 
 def _remove_photos(names: set[str]) -> None:
@@ -1179,6 +1215,48 @@ def export_document(scan_id: int, fmt: str):
         return redirect(url_for("index"))
     stem = _download_stem(document_label(scan), scan["created_at"])
     return _download(fmt, [], _RECORD_COLUMNS, [scan], stem, tidy=request.args.get("tidy") != "0")
+
+
+@app.route("/documents/<int:scan_id>/statement")
+def document_statement(scan_id: int):
+    """The document laid out like a bank statement (see web/statement.py).
+
+    The page's form sets what each column holds (c0, c1, ... by heading), the
+    business name, currency and opening balance; ``download=xlsx`` or ``csv``
+    with the same settings gives the file.
+    """
+    scan = _load_scan(scan_id)
+    if scan is None:
+        flash(tr("That document could not be found."))
+        return redirect(url_for("index"))
+    columns = statement.document_columns(scan["tables"])
+    for i, column in enumerate(columns):
+        chosen = request.args.get(f"c{i}")
+        column["role"] = chosen if chosen in statement.ROLES else column["guess"]
+    label = document_label(scan)
+    business = request.args.get("business", label).strip()[:120] or label
+    currency = request.args.get("currency") if request.args.get("currency") in statement.CURRENCIES else "USD"
+    opening_text = request.args.get("opening", "").strip()[:30]
+    result = statement.build(scan["tables"], {c["key"]: c["role"] for c in columns},
+                             statement.parse_amount(opening_text) or 0.0 if opening_text else 0.0)
+    prepared = datetime.now()
+
+    stem = _download_stem(f"{label} statement", scan["created_at"])
+    download = request.args.get("download")
+    if download == "xlsx":
+        data = statement.workbook(result, business, currency, prepared)
+    elif download == "csv":
+        data = statement.csv_text(result).encode("utf-8-sig")
+    else:
+        settings = {key: value for key, value in request.args.items() if key != "download"}
+        return render_template("statement.html", scan=scan, label=label, columns=columns, st=result,
+                               business=business, currency=currency, opening_text=opening_text,
+                               period=statement.period(result), prepared=prepared.strftime("%d/%m/%Y"),
+                               settings=settings, roles=statement.ROLES, currencies=statement.CURRENCIES,
+                               title_en=statement.TITLE, not_a_bank=statement.NOT_A_BANK,
+                               columns_en=statement.COLUMNS)
+    return send_file(io.BytesIO(data), mimetype=_MIMETYPES[download], as_attachment=True,
+                     download_name=f"{stem}.{download}")
 
 
 # ---------------------------------------------------------------------------

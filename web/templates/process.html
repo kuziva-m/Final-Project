@@ -6,19 +6,24 @@
   {{ _("1 page") if pages == 1 else _("{n} pages", n=pages) }} · {{ _("1 row") if rows == 1 else _("{n} rows", n=rows) }} · {{ _("1 cell to check") if unsure == 1 else _("{n} cells to check", n=unsure) }}
 {%- endmacro %}
 
-{% macro viewer(image, label, choices=None) -%}
-  <figure class="viewer">
+{# straight: the page straightened and sharpened, shown with the Photo / Straightened switch (scans up to 4 pages). #}
+{% macro viewer(image, label, choices=None, straight=None) -%}
+  <figure class="viewer"{% if straight %} data-straight="{{ straight }}"{% endif %}>
     <div class="viewer-frame">
       <img src="{{ image }}" alt="{{ label }}" loading="lazy">
     </div>
     <figcaption class="viewer-bar">
       {% if choices and choices|length > 1 %}
       <select class="viewer-select" aria-label="{{ _('Photo to show') }}">
-        {% for page, url in choices %}<option value="{{ url }}">{{ _("Page {n}", n=page) }}</option>{% endfor %}
+        {% for page, url, straight_url in choices %}<option value="{{ url }}" data-straight="{{ straight_url or '' }}">{{ _("Page {n}", n=page) }}</option>{% endfor %}
       </select>
       {% else %}
-      <span>{{ _("Your photo") }}</span>
+      <span class="viewer-label">{{ _("Your photo") }}</span>
       {% endif %}
+      <span class="viewer-views" role="group" aria-label="{{ _('Show the page as') }}" hidden>
+        <button type="button" data-view="photo" aria-pressed="true">{{ _("Photo") }}</button>
+        <button type="button" data-view="straight" aria-pressed="false">{{ _("Straightened") }}</button>
+      </span>
       <span class="viewer-approx" hidden>{{ _("approx. position") }}</span>
       <span class="viewer-zoom" hidden>
         <button type="button" data-zoom="out" aria-label="{{ _('Zoom out') }}">−</button>
@@ -118,7 +123,7 @@
         </div>
         {% endif %}
         <div class="page-grid{% if not group.image %} no-photo{% endif %}">
-          {% if group.image %}{{ viewer(group.image, _("Photo of page {n}", n=group.page)) }}{% endif %}
+          {% if group.image %}{{ viewer(group.image, _("Photo of page {n}", n=group.page), straight=group.straight) }}{% endif %}
 
           <div class="page-tables">
             {% for t, table in group.tables %}
@@ -169,7 +174,7 @@
 
       <section class="page" data-page="1">
         <div class="page-grid{% if not page_images %} no-photo{% endif %}">
-          {% if page_images %}{{ viewer(page_images[0][1], _("Photo of your ledger"), page_images) }}{% endif %}
+          {% if page_images %}{{ viewer(page_images[0][1], _("Photo of your ledger"), page_images, page_images[0][2]) }}{% endif %}
           <div class="page-tables">
             <div class="table-block">
               <div class="table-tools"></div>
@@ -212,12 +217,6 @@
         {% if source_file %}<dt>{{ _("File") }}</dt><dd class="filename">{{ source_file }}{% if pages_note %} · {{ pages_note }}{% endif %}</dd>{% endif %}
         {% if used_engine %}<dt>{{ _("Read by") }}</dt><dd>{{ used_engine }}</dd>{% endif %}
       </dl>
-      {% if processed_url %}
-      <figure class="straightened">
-        <figcaption>{{ _("Straightened photo") }}{% if pages_note %} · {{ _("Page {n}", n=1) }}{% endif %}</figcaption>
-        <img src="{{ processed_url }}" alt="{{ _('Straightened photo') }}" loading="lazy">
-      </figure>
-      {% endif %}
     </details>
   </section>
 {% endblock %}
