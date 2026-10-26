@@ -8,7 +8,10 @@ set ANTHROPIC_API_KEY=
 rem No Hugging Face backup on a laptop; saved data stays in the data folder.
 set HF_TOKEN=
 
-python -m web.app
+rem Use the project's virtual environment if there is one (e.g. made by VS Code).
+set PY=python
+if exist ".venv\Scripts\python.exe" set PY=.venv\Scripts\python.exe
+%PY% -m web.app
 echo.
 echo The app has stopped. Press any key to close this window.
 pause >nul
