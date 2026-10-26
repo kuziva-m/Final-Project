@@ -783,6 +783,26 @@ td input[type="text"]:focus {
 
 .doc-meta { font-size: 0.9rem; color: var(--muted); }
 
+/* Who scanned a shared document, and who changed it since */
+.doc-by { font-size: 0.9rem; color: var(--white); }
+.doc-by-page { margin: -1rem 0 1.75rem; }
+
+/* Everyone's / Only mine, on an organisation's documents */
+.doc-filter { display: flex; margin: 0 0 1.5rem; }
+
+.doc-filter a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0.5rem 1.1rem;
+  border: 1.5px solid var(--white);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.doc-filter a + a { border-left: 0; }
+.doc-filter a[aria-current] { background: var(--white); color: var(--blue); }
+
 /* Phones: a Scan button within thumb reach (shown by app.js) */
 .thumb-bar { display: none; }
 
@@ -1326,6 +1346,132 @@ tfoot td.total-label {
 
 .account form { margin: 0; }
 .account .link-button { color: var(--white); }
+.account-link { color: inherit; text-decoration: none; }
+.account-link:hover .account-email { color: var(--white); text-decoration: underline; text-underline-offset: 4px; }
+.account-short { display: none; }
+
+/* Account page: your details, your organisation and its people */
+
+.settings {
+  width: min(100%, 44rem + 2 * var(--edge));
+  padding: 1.5rem var(--edge) 4rem;
+}
+
+.settings h1 {
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: clamp(2.6rem, 5vw, 4rem);
+  line-height: 1;
+  margin: 0 0 0.5rem;
+}
+
+.settings .meta { margin: 0 0 1rem; }
+
+.settings-block {
+  padding: 2rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.settings-block h2 {
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 2rem;
+  line-height: 1.1;
+  margin: 0 0 0.75rem;
+  word-break: break-word;
+}
+
+.settings-lede { margin: 0 0 1.5rem; color: var(--muted); }
+
+.settings-form {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1.25rem;
+}
+
+.settings-form .field { width: min(100%, 30rem); }
+
+.settings-more { margin-top: 1.25rem; }
+.settings-more summary { cursor: pointer; font-weight: 600; padding: 0.4rem 0; }
+.settings-more[open] summary { margin-bottom: 1rem; }
+.settings-more > p { margin: 0 0 1rem; color: var(--muted); }
+.settings-more-list { margin-top: 2rem; }
+.settings-notice { margin-top: 1.5rem; }
+.settings-notice p { margin: 0 0 0.75rem; }
+
+.org-code { margin: 0 0 2rem; padding: 1.1rem 1.25rem; border: 1.5px solid var(--gold); }
+.org-code-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem 1.25rem; margin: 0.35rem 0 0.5rem; }
+
+.org-code-value {
+  font-size: 1.9rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--gold);
+  word-break: break-all;
+}
+
+.org-code .btn { padding: 0.55rem 1.2rem; }
+
+.people-heading { margin: 0 0 0.75rem; font-size: 1.1rem; }
+.people-count { color: var(--muted); font-weight: 500; }
+
+.people { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+
+.people li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  padding: 0.85rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.person { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
+.person-name { font-weight: 600; word-break: break-word; }
+.person-meta { font-size: 0.9rem; color: var(--muted); word-break: break-word; }
+
+.tag {
+  display: inline-block;
+  margin-left: 0.35rem;
+  padding: 0.05rem 0.45rem;
+  border: 1px solid var(--line);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+.tag-gold { border-color: var(--gold); color: var(--gold); }
+
+.person-actions summary { cursor: pointer; font-weight: 600; padding: 0.5rem 0; text-decoration: underline; text-underline-offset: 4px; }
+.person-actions[open] { flex-basis: 100%; }
+.person-buttons { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 0.5rem; }
+.person-buttons form { margin: 0; }
+.person-buttons .btn { padding: 0.6rem 1.1rem; }
+
+/* Position: common ones to tap, or type your own */
+.position-picks { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.25rem 0 0.4rem; }
+
+.pick-chip {
+  min-height: 40px;
+  padding: 0.45rem 0.9rem;
+  border: 1.5px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--white);
+  font: inherit;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+.pick-chip:hover { border-color: var(--white); }
+.pick-chip[aria-pressed="true"] { background: var(--white); border-color: var(--white); color: var(--blue); font-weight: 600; }
+
+.share-notice p { margin: 0 0 0.75rem; }
+.share-notice { margin: -0.75rem 0 1.75rem; }
 
 .framed-note {
   margin: 0 var(--edge) 1rem;
@@ -1626,7 +1772,17 @@ tfoot td.total-label {
   .site-header .nav-right { display: contents; }
   .site-header .account { grid-area: brand; justify-self: end; }
   .site-header .account-email { display: none; }
-  .site-header .account .link-button { min-height: 44px; padding: 0 0.25rem; }
+  /* "Account" instead of Sign out, which is on the Account page. */
+  .site-header .account form { display: none; }
+  .site-header .account-short {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 0 0.25rem;
+    font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 4px;
+  }
   .site-header .nav-right > .btn { grid-area: right; }
   .site-header:not(.has-user) .nav-right > .btn { grid-area: brand; justify-self: end; }
   .site-header .nav-left a:not(.btn),

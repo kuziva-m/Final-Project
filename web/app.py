@@ -178,13 +178,18 @@ def init_db() -> None:
     """Create the tables if they do not already exist.
 
     users   -- accounts: email, password hash, and a session key that signs
-               out every device when changed.
+               out every device when changed; name and position (shown to
+               colleagues), and the organisation they belong to, if any.
+    organisations -- businesses whose staff share their documents; code is
+               what staff enter to join.
     uploads -- which user each upload belongs to, by the time stamp that
-               starts all of its file names.
+               starts all of its file names, and its organisation then.
     records -- fixed date/item/qty/price/total rows (OCR fusion, mobile app).
     scans   -- documents read with their own headings; tables_json holds
                [{"title", "columns", "rows", "page", "image"}], since columns
                vary per business. name is the owner's name for the document.
+               user_id scanned it; org_id, when set, shares it with everyone
+               in that organisation; updated_by changed it last.
     """
     with sqlite3.connect(str(DB_PATH)) as conn:
         conn.execute(
@@ -232,14 +237,55 @@ def init_db() -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS organisations (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                name        TEXT NOT NULL,
+                code        TEXT NOT NULL UNIQUE,
+                created_at  TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute("CREATE TABLE IF NOT EXISTS app_state (key TEXT PRIMARY KEY, value TEXT)")
         # Columns added after the first release; older databases get them here.
-        for table, columns in (("scans", ("name TEXT", "updated_at TEXT", "user_id INTEGER")),
-                               ("records", ("user_id INTEGER",))):
+        for table, columns in (("scans", ("name TEXT", "updated_at TEXT", "user_id INTEGER", "org_id INTEGER",
+                                          "updated_by INTEGER")),
+                               ("records", ("user_id INTEGER",)),
+                               ("users", ("name TEXT", "position TEXT", "org_id INTEGER",
+                                          "org_admin INTEGER NOT NULL DEFAULT 0")),
+                               ("uploads", ("org_id INTEGER",))):
             existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
             for column in columns:
                 if column.split()[0] not in existing:
                     conn.execute(f"ALTER TABLE {table} ADD COLUMN {column}")
+        seeded = _seed_organisations(conn)
         conn.commit()
+    if seeded:
+        backup.mark_dirty()
+
+
+def _seed_organisations(conn: sqlite3.Connection) -> bool:
+    """Create the organisations named in LEDGER_ORGANISATIONS, e.g.
+    "Delta=DELTA2026, Acme=ACME7731". Each is created once only, so renaming
+    it or changing its code in the app later sticks. The first person to join
+    one becomes its admin."""
+    seeded = False
+    now = datetime.now(timezone.utc).isoformat()
+    for entry in os.environ.get("LEDGER_ORGANISATIONS", "").split(","):
+        name, _, code = entry.partition("=")
+        name, code = name.strip()[:80], _org_code(code)
+        if not name or len(code) < 4:
+            continue
+        key = f"seeded-organisation:{code}"
+        if conn.execute("SELECT 1 FROM app_state WHERE key = ?", (key,)).fetchone():
+            continue
+        if not conn.execute("SELECT 1 FROM organisations WHERE code = ?", (code,)).fetchone():
+            conn.execute("INSERT INTO organisations (name, code, created_at) VALUES (?, ?, ?)", (name, code, now))
+            app.logger.info("Created the organisation %s from LEDGER_ORGANISATIONS.", name)
+        conn.execute("INSERT INTO app_state (key, value) VALUES (?, ?)", (key, now))
+        seeded = True
+    return seeded
 
 
 def get_db() -> sqlite3.Connection:
@@ -259,9 +305,10 @@ def close_db(_exc: BaseException | None) -> None:
 
 # ---------------------------------------------------------------------------
 # Accounts -- scanning needs a signed-in user, and everyone sees only their own
-# uploads, documents and records. The web pages use the session cookie; the
-# phone app gets a token from /api/login and sends it as "Authorization:
-# Bearer <token>".
+# uploads, documents and records -- except that the staff of an organisation
+# (joined with its code) all see its documents. The web pages use the session
+# cookie; the phone app gets a token from /api/login and sends it as
+# "Authorization: Bearer <token>".
 # ---------------------------------------------------------------------------
 
 _EMAIL = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
@@ -272,6 +319,10 @@ _API_TOKEN_DAYS = 30
 # Pages anyone can open; everything else needs a signed-in user.
 _PUBLIC_ENDPOINTS = {"index", "login", "signup", "logout", "set_language", "static", "api_health", "api_login",
                      "forgot_password", "reset_password"}
+# Pages that open before someone who has joined an organisation has said
+# their name and position (every other page asks for them first).
+_BEFORE_WELCOME = {"welcome", "logout", "set_language", "static", "account", "leave_organisation",
+                   "processed_file", "uploaded_file"}
 
 # Repeated wrong passwords for one email are refused for a while.
 _failed_logins: dict[str, list[float]] = {}
@@ -387,10 +438,15 @@ def _user_from_request() -> dict | None:
     if uid is None or not key:
         return None
     # The session key also guards against a stale cookie meeting a reused id.
-    row = get_db().execute("SELECT id, email, session_key FROM users WHERE id = ?", (uid,)).fetchone()
+    row = get_db().execute(
+        "SELECT u.id, u.email, u.session_key, u.name, u.position, u.org_id, u.org_admin, o.name AS org_name "
+        "FROM users u LEFT JOIN organisations o ON o.id = u.org_id WHERE u.id = ?", (uid,)).fetchone()
     if row is None or not hmac.compare_digest(row["session_key"], str(key)):
         return None
-    return {"id": row["id"], "email": row["email"]}
+    in_org = row["org_name"] is not None
+    return {"id": row["id"], "email": row["email"], "name": row["name"] or "", "position": row["position"] or "",
+            "org_id": row["org_id"] if in_org else None, "org_name": row["org_name"],
+            "org_admin": in_org and bool(row["org_admin"])}
 
 
 def _wants_json() -> bool:
@@ -401,6 +457,9 @@ def _wants_json() -> bool:
 @app.before_request
 def require_sign_in():
     g.user = _user_from_request()
+    if (g.user is not None and g.user["org_id"] and not g.user["position"] and request.method == "GET"
+            and not _wants_json() and request.endpoint not in _BEFORE_WELCOME):
+        return redirect(url_for("welcome", next=request.full_path.rstrip("?")))
     if g.user is not None or request.endpoint is None or request.endpoint in _PUBLIC_ENDPOINTS:
         return None
     if _wants_json():
@@ -428,23 +487,105 @@ def _sign_in(user: sqlite3.Row):
     session["uid"], session["key"] = user["id"], user["session_key"]
 
 
+# ---------------------------------------------------------------------------
+# Organisations -- a business's staff join with its code (when creating their
+# account, or on the Account page), say their name and position, and then all
+# see and edit its documents. Admins see the code and can change it, rename
+# the organisation, and make others admin or remove them. Documents saved in
+# an organisation belong to it: someone who leaves stops seeing them, and
+# they stay for everyone else.
+# ---------------------------------------------------------------------------
+
+# Suggested for "your position"; any position can be typed.
+POSITIONS = ("Owner", "Manager", "Accountant", "Bookkeeper", "Sales clerk", "Cashier", "Stock controller",
+             "Supervisor")
+
+# Wrong codes are counted per visitor and across everyone, so a code can't be
+# found by trying many.
+_code_failures: dict[str, list[float]] = {}
+_MAX_CODE_FAILURES, _MAX_CODE_FAILURES_ALL = 10, 100
+
+
+def _org_code(text: str) -> str:
+    """A code as stored: capitals and digits only, so "delta 2026" is DELTA2026."""
+    return re.sub(r"[^A-Z0-9]", "", (text or "").upper())[:24]
+
+
+def _visitor() -> str:
+    return (request.access_route[0] if request.access_route else request.remote_addr) or "?"
+
+
+def _too_many_code_failures() -> bool:
+    now = time.time()
+    with _failed_lock:
+        for key in list(_code_failures):
+            _code_failures[key] = [t for t in _code_failures[key] if now - t < _FAILURE_WINDOW]
+            if not _code_failures[key]:
+                del _code_failures[key]
+        mine = len(_code_failures.get(_visitor(), []))
+        everyone = sum(len(times) for times in _code_failures.values())
+    return mine >= _MAX_CODE_FAILURES or everyone >= _MAX_CODE_FAILURES_ALL
+
+
+def _record_code_failure() -> None:
+    with _failed_lock:
+        _code_failures.setdefault(_visitor(), []).append(time.time())
+
+
+def _organisation_for_code(text: str) -> sqlite3.Row | None:
+    code = _org_code(text)
+    if len(code) < 4:
+        return None
+    return get_db().execute("SELECT * FROM organisations WHERE code = ?", (code,)).fetchone()
+
+
+def _join_organisation(user_id: int, org: sqlite3.Row) -> None:
+    """Put *user_id* in *org*. The first to join one with no admin becomes its admin."""
+    db = get_db()
+    has_admin = db.execute("SELECT 1 FROM users WHERE org_id = ? AND org_admin = 1", (org["id"],)).fetchone()
+    db.execute("UPDATE users SET org_id = ?, org_admin = ? WHERE id = ?",
+               (org["id"], 0 if has_admin else 1, user_id))
+
+
+def _new_org_code(name: str) -> str:
+    """A code for a new organisation: the first word of its name and four digits, e.g. MBARE4821."""
+    words = name.split()
+    word = _org_code(words[0] if words else "")[:10] or "TEAM"
+    db = get_db()
+    while True:
+        code = f"{word}{secrets.randbelow(9000) + 1000}"
+        if not db.execute("SELECT 1 FROM organisations WHERE code = ?", (code,)).fetchone():
+            return code
+
+
 @app.route("/signup", methods=["GET", "POST"])
 def signup():
-    """Create an account (with the sign-up code, when one is set)."""
+    """Create an account. One code box: an organisation's code joins it (and
+    is enough to sign up); otherwise the app's sign-up code, when one is set."""
     if g.user:
         return redirect(url_for("index"))
     email = request.form.get("email", "").strip().lower()
+    entered = request.form.get("code", "").strip()
     if request.method == "POST":
         password = request.form.get("password", "")
         code = _signup_code()
+        org = None
         error = None
         if not _EMAIL.fullmatch(email) or len(email) > 254:
             error = tr("Enter a valid email address.")
         elif len(password) < _MIN_PASSWORD:
             error = tr("Use a password of at least {n} characters.", n=_MIN_PASSWORD)
-        elif code and not hmac.compare_digest(_normal_code(request.form.get("code", "")), code):
-            error = tr("That sign-up code isn't right. Ask the app's owner for it.")
-        else:
+        elif entered and _too_many_code_failures():
+            error = tr("Too many wrong codes. Wait 15 minutes and try again.")
+        elif entered:
+            # Neither kind of code minds case, spaces or quotes around it.
+            org = _organisation_for_code(entered)
+            if org is None and not (code and hmac.compare_digest(_normal_code(entered), code)):
+                _record_code_failure()
+                error = tr("That code isn't right. Check it with whoever gave it to you.")
+        elif code:
+            error = tr("Enter your organisation's code, or the sign-up code from the app's owner.")
+        if not error:
             db = get_db()
             try:
                 db.execute(
@@ -452,17 +593,25 @@ def signup():
                     (email, generate_password_hash(password), secrets.token_hex(16),
                      datetime.now(timezone.utc).isoformat()),
                 )
-                db.commit()
             except sqlite3.IntegrityError:
-                error = tr("There is already an account with that email. Sign in instead.")
+                error = tr("There is already an account with that email. Sign in, then join from your Account page.")
+            else:
+                user = db.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+                if org is not None:
+                    _join_organisation(user["id"], org)
+                db.commit()
         if error:
             flash(error)
         else:
             backup.mark_dirty()
-            _sign_in(db.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone())
+            _sign_in(user)
+            if org is not None:
+                flash(tr("Welcome! You've joined {org}.", org=org["name"]))
+                return redirect(url_for("welcome", next=_safe_target(request.args.get("next"))))
             flash(tr("Welcome! Your account is ready, and everything you save is kept in it."))
             return redirect(_safe_target(request.args.get("next")))
-    return render_template("auth.html", mode="signup", email=email, code_required=bool(_signup_code()))
+    return render_template("auth.html", mode="signup", email=email, entered_code=entered,
+                           code_required=bool(_signup_code()))
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -560,6 +709,218 @@ def reset_password(token: str):
     return render_template("auth.html", mode="reset", email=user["email"], code_required=False)
 
 
+def _members(org_id: int) -> list[sqlite3.Row]:
+    """Everyone in an organisation, admins first, then by name."""
+    return get_db().execute(
+        "SELECT id, email, name, position, org_admin FROM users WHERE org_id = ? "
+        "ORDER BY org_admin DESC, COALESCE(NULLIF(name, ''), email) COLLATE NOCASE", (org_id,)).fetchall()
+
+
+@app.route("/account")
+def account():
+    """Your name and position, your organisation -- or joining or starting one -- and signing out."""
+    org, members, personal = None, [], 0
+    if g.user["org_id"]:
+        db = get_db()
+        org = db.execute("SELECT * FROM organisations WHERE id = ?", (g.user["org_id"],)).fetchone()
+        members = _members(g.user["org_id"])
+        personal = db.execute("SELECT COUNT(*) FROM scans WHERE user_id = ? AND org_id IS NULL",
+                              (g.user["id"],)).fetchone()[0]
+    return render_template("account.html", org=org, members=members, personal=personal, positions=POSITIONS)
+
+
+def _save_details() -> bool:
+    """Save the name and position from the form; False, with a message, if one is missing."""
+    name = " ".join(request.form.get("name", "").split())[:80]
+    position = " ".join(request.form.get("position", "").split())[:60]
+    if g.user["org_id"] and (not name or not position):
+        flash(tr("Add your name and your position, so colleagues know who scanned what."))
+        return False
+    db = get_db()
+    db.execute("UPDATE users SET name = ?, position = ? WHERE id = ?",
+               (name or None, position or g.user["position"] or None, g.user["id"]))
+    db.commit()
+    backup.mark_dirty()
+    return True
+
+
+@app.route("/welcome", methods=["GET", "POST"])
+def welcome():
+    """Straight after joining an organisation: your name and position, which colleagues see."""
+    target = _safe_target(request.args.get("next"))
+    if not g.user["org_id"]:
+        return redirect(target)
+    if request.method == "POST" and _save_details():
+        return redirect(target)
+    return render_template("welcome.html", positions=POSITIONS, next=target)
+
+
+@app.route("/account/details", methods=["POST"])
+def save_details():
+    if _save_details():
+        flash(tr("Saved your details."))
+    return redirect(url_for("account"))
+
+
+def _not_in_organisation() -> bool:
+    """True if the signed-in user isn't in one; else says to leave first."""
+    if g.user["org_id"]:
+        flash(tr("Leave {org} first to join another organisation.", org=g.user["org_name"]))
+        return False
+    return True
+
+
+@app.route("/account/join", methods=["POST"])
+def join_organisation():
+    """Join an organisation with its code, from the Account page."""
+    if not _not_in_organisation():
+        return redirect(url_for("account"))
+    if _too_many_code_failures():
+        flash(tr("Too many wrong codes. Wait 15 minutes and try again."))
+        return redirect(url_for("account"))
+    org = _organisation_for_code(request.form.get("code", ""))
+    if org is None:
+        _record_code_failure()
+        flash(tr("That code isn't right. Check it with whoever gave it to you."))
+        return redirect(url_for("account"))
+    _join_organisation(g.user["id"], org)
+    get_db().commit()
+    backup.mark_dirty()
+    flash(tr("Welcome! You've joined {org}.", org=org["name"]))
+    return redirect(url_for("welcome", next=url_for("documents")))
+
+
+@app.route("/account/organisation", methods=["POST"])
+def create_organisation():
+    """Start an organisation; its creator is its admin and gets a code to give staff."""
+    if not _not_in_organisation():
+        return redirect(url_for("account"))
+    name = " ".join(request.form.get("name", "").split())[:80]
+    if not name:
+        flash(tr("Enter the organisation's name."))
+        return redirect(url_for("account"))
+    db = get_db()
+    code = _new_org_code(name)
+    cursor = db.execute("INSERT INTO organisations (name, code, created_at) VALUES (?, ?, ?)",
+                        (name, code, datetime.now(timezone.utc).isoformat()))
+    db.execute("UPDATE users SET org_id = ?, org_admin = 1 WHERE id = ?", (cursor.lastrowid, g.user["id"]))
+    db.commit()
+    backup.mark_dirty()
+    flash(tr("{org} is ready. Give your staff the code {code} to join.", org=name, code=code))
+    return redirect(url_for("welcome", next=url_for("account")))
+
+
+@app.route("/account/leave", methods=["POST"])
+def leave_organisation():
+    if not g.user["org_id"]:
+        return redirect(url_for("account"))
+    db = get_db()
+    if g.user["org_admin"]:
+        others = db.execute("SELECT COUNT(*), COALESCE(SUM(org_admin), 0) FROM users WHERE org_id = ? AND id != ?",
+                            (g.user["org_id"], g.user["id"])).fetchone()
+        if others[0] and not others[1]:
+            flash(tr("Make someone else an admin first, so {org} still has one.", org=g.user["org_name"]))
+            return redirect(url_for("account"))
+    db.execute("UPDATE users SET org_id = NULL, org_admin = 0 WHERE id = ?", (g.user["id"],))
+    db.commit()
+    backup.mark_dirty()
+    flash(tr("You've left {org}. Its documents stay with it.", org=g.user["org_name"]))
+    return redirect(url_for("account"))
+
+
+def _colleague(user_id: int) -> sqlite3.Row | None:
+    """Someone else in the signed-in admin's organisation; None if not, or not an admin."""
+    if not g.user["org_admin"] or user_id == g.user["id"]:
+        return None
+    return get_db().execute("SELECT * FROM users WHERE id = ? AND org_id = ?",
+                            (user_id, g.user["org_id"])).fetchone()
+
+
+@app.route("/account/members/<int:user_id>/remove", methods=["POST"])
+def remove_member(user_id: int):
+    member = _colleague(user_id)
+    if member is not None:
+        db = get_db()
+        db.execute("UPDATE users SET org_id = NULL, org_admin = 0 WHERE id = ?", (user_id,))
+        db.commit()
+        backup.mark_dirty()
+        flash(tr("Removed {name} from {org}. If they know the code, change it so they can't join again.",
+                 name=member["name"] or member["email"], org=g.user["org_name"]))
+    return redirect(url_for("account"))
+
+
+@app.route("/account/members/<int:user_id>/admin", methods=["POST"])
+def make_admin(user_id: int):
+    member = _colleague(user_id)
+    if member is not None:
+        db = get_db()
+        db.execute("UPDATE users SET org_admin = 1 WHERE id = ?", (user_id,))
+        db.commit()
+        backup.mark_dirty()
+        flash(tr("{name} is now an admin of {org}.", name=member["name"] or member["email"], org=g.user["org_name"]))
+    return redirect(url_for("account"))
+
+
+@app.route("/account/organisation/code", methods=["POST"])
+def change_org_code():
+    """A new code to join with (typed, or made up); the old one stops working."""
+    if not g.user["org_admin"]:
+        return redirect(url_for("account"))
+    db = get_db()
+    wanted = _org_code(request.form.get("code", ""))
+    if not wanted:
+        wanted = _new_org_code(g.user["org_name"])
+    elif len(wanted) < 6:
+        flash(tr("Use at least 6 letters and numbers for the code."))
+        return redirect(url_for("account"))
+    elif (db.execute("SELECT 1 FROM organisations WHERE code = ? AND id != ?", (wanted, g.user["org_id"])).fetchone()
+          or wanted == _org_code(_signup_code())):
+        flash(tr("That code is taken. Try another."))
+        return redirect(url_for("account"))
+    db.execute("UPDATE organisations SET code = ? WHERE id = ?", (wanted, g.user["org_id"]))
+    db.commit()
+    backup.mark_dirty()
+    flash(tr("The code is now {code}. The old one no longer works.", code=wanted))
+    return redirect(url_for("account"))
+
+
+@app.route("/account/organisation/name", methods=["POST"])
+def rename_organisation():
+    name = " ".join(request.form.get("name", "").split())[:80]
+    if g.user["org_admin"] and name:
+        db = get_db()
+        db.execute("UPDATE organisations SET name = ? WHERE id = ?", (name, g.user["org_id"]))
+        db.commit()
+        backup.mark_dirty()
+        flash(tr("The organisation is now called {org}.", org=name))
+    return redirect(url_for("account"))
+
+
+def _share_with_organisation(scans: list[dict]) -> None:
+    """Give the signed-in user's own documents *scans*, and their page photos, to their organisation."""
+    db = get_db()
+    for scan in scans:
+        db.execute("UPDATE scans SET org_id = ? WHERE id = ? AND user_id = ? AND org_id IS NULL",
+                   (g.user["org_id"], scan["id"], g.user["id"]))
+        for name in _photo_names(scan["tables"]):
+            match = _STAMP.match(name)
+            if match:
+                db.execute("UPDATE uploads SET org_id = ? WHERE stamp = ? AND user_id = ?",
+                           (g.user["org_id"], match.group(1), g.user["id"]))
+    db.commit()
+    backup.mark_dirty()
+
+
+@app.route("/account/share-all", methods=["POST"])
+def share_all_documents():
+    """Share every document saved before joining with the organisation."""
+    if g.user["org_id"]:
+        mine = [scan for scan in _user_scans() if scan["org_id"] is None and scan["user_id"] == g.user["id"]]
+        _share_with_organisation(mine)
+        flash(tr("Shared {n} document(s) with {org}.", n=len(mine), org=g.user["org_name"]))
+    return redirect(url_for("account"))
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -590,6 +951,17 @@ def _owns_file(name: str) -> bool:
         return False
     row = get_db().execute("SELECT user_id FROM uploads WHERE stamp = ?", (match.group(1),)).fetchone()
     return row is not None and row["user_id"] == g.user["id"]
+
+
+def _can_see_file(name: str) -> bool:
+    """Whether the signed-in user may see the page photos from file *name*'s upload:
+    they made it, or it belongs to their organisation (its shared documents)."""
+    match = _STAMP.match(name or "")
+    if not match or g.get("user") is None:
+        return False
+    row = get_db().execute("SELECT user_id, org_id FROM uploads WHERE stamp = ?", (match.group(1),)).fetchone()
+    return row is not None and (row["user_id"] == g.user["id"]
+                                or (row["org_id"] is not None and row["org_id"] == g.user["org_id"]))
 
 
 def _env_int(name: str, default: int) -> int:
@@ -637,8 +1009,8 @@ def _save_upload(upload) -> tuple[Path | None, str | None]:
     source_path = UPLOADS_DIR / f"{stem}{ext}"
     upload.save(str(source_path))
     db = get_db()
-    db.execute("INSERT INTO uploads (stamp, user_id, created_at) VALUES (?, ?, ?)",
-               (_STAMP.match(stem).group(1), g.user["id"], datetime.now(timezone.utc).isoformat()))
+    db.execute("INSERT INTO uploads (stamp, user_id, created_at, org_id) VALUES (?, ?, ?, ?)",
+               (_STAMP.match(stem).group(1), g.user["id"], datetime.now(timezone.utc).isoformat(), g.user["org_id"]))
     db.commit()
     return source_path, None
 
@@ -914,28 +1286,67 @@ def _scan_dict(row: sqlite3.Row) -> dict:
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
         "tables": json.loads(row["tables_json"]),
+        "user_id": row["user_id"],
+        "org_id": row["org_id"],
+        "updated_by": row["updated_by"],
     }
 
 
-_SCAN_COLUMNS = "id, name, source_file, engine, tables_json, created_at, updated_at"
+_SCAN_COLUMNS = "id, name, source_file, engine, tables_json, created_at, updated_at, user_id, org_id, updated_by"
+
+
+def _visible() -> tuple[str, tuple]:
+    """SQL for the documents the signed-in user may see: their own personal
+    ones, and every one belonging to their organisation."""
+    return ("((org_id IS NULL AND user_id = ?) OR (org_id IS NOT NULL AND org_id = ?))",
+            (g.user["id"], g.user["org_id"] or -1))
 
 
 def _load_scan(scan_id: int) -> dict | None:
-    """The signed-in user's document *scan_id*, or None (also for anyone else's)."""
-    row = get_db().execute(f"SELECT {_SCAN_COLUMNS} FROM scans WHERE id = ? AND user_id = ?",
-                           (scan_id, g.user["id"])).fetchone()
+    """Document *scan_id* if the signed-in user may see it, else None."""
+    where, params = _visible()
+    row = get_db().execute(f"SELECT {_SCAN_COLUMNS} FROM scans WHERE id = ? AND {where}",
+                           (scan_id, *params)).fetchone()
     return _scan_dict(row) if row else None
 
 
-def _user_scans(limit: int | None = None) -> list[dict]:
-    """The signed-in user's documents, most recently changed first."""
-    sql = (f"SELECT {_SCAN_COLUMNS} FROM scans WHERE user_id = ? "
-           "ORDER BY COALESCE(updated_at, created_at) DESC, id DESC")
-    params: tuple = (g.user["id"],)
+def _user_scans(limit: int | None = None, mine: bool = False) -> list[dict]:
+    """The documents the signed-in user may see (*mine*: only ones they scanned), most recently changed first."""
+    where, params = _visible()
+    sql = f"SELECT {_SCAN_COLUMNS} FROM scans WHERE {where}"
+    if mine:
+        sql += " AND user_id = ?"
+        params += (g.user["id"],)
+    sql += " ORDER BY COALESCE(updated_at, created_at) DESC, id DESC"
     if limit:
         sql += " LIMIT ?"
         params += (limit,)
     return [_scan_dict(row) for row in get_db().execute(sql, params)]
+
+
+def _can_delete(scan: dict) -> bool:
+    """Whoever scanned a document may delete it; in an organisation, its admins may too."""
+    return scan["user_id"] == g.user["id"] or (scan["org_id"] is not None and g.user["org_admin"])
+
+
+def _people(scans: list[dict]) -> dict[int, sqlite3.Row]:
+    """The users who scanned or last changed *scans*, by id."""
+    ids = {scan["user_id"] for scan in scans} | {scan["updated_by"] for scan in scans}
+    ids = [i for i in ids if i is not None]
+    if not ids:
+        return {}
+    rows = get_db().execute(f"SELECT id, email, name, position FROM users WHERE id IN ({','.join('?' * len(ids))})",
+                            ids)
+    return {row["id"]: row for row in rows}
+
+
+def _person(user_id: int, people: dict[int, sqlite3.Row]) -> str:
+    """A colleague's name and position, for showing who scanned or changed a document."""
+    row = people.get(user_id)
+    if row is None:
+        return tr("a former member")
+    name = row["name"] or row["email"]
+    return f"{name}, {tr(row['position'])}" if row["position"] else name
 
 
 def _nice_date(iso: str | None) -> str:
@@ -947,22 +1358,37 @@ def _nice_date(iso: str | None) -> str:
     return f"{when.day} {when:%b %Y}"
 
 
-def _scan_summary(scan: dict) -> dict:
+def _scan_summary(scan: dict, people: dict[int, sqlite3.Row] | None = None) -> dict:
     pages = sorted({t.get("page") or 1 for t in scan["tables"]})
+    people = _people([scan]) if people is None else people
     return {
         "id": scan["id"],
         "label": document_label(scan),
         "date": _nice_date(scan["updated_at"] or scan["created_at"]),
         "pages": len(pages),
         "rows": sum(len(t["rows"]) for t in scan["tables"]),
+        # Who scanned it and who changed it since, shown when it is shared.
+        # "you" has sentences of its own, as it changes the grammar.
+        "shared": scan["org_id"] is not None,
+        "mine": scan["user_id"] == g.user["id"],
+        "by": None if scan["user_id"] == g.user["id"] else _person(scan["user_id"], people),
+        "changed": scan["updated_by"] not in (None, scan["user_id"]),
+        "changed_by": None if scan["updated_by"] in (None, g.user["id"]) else _person(scan["updated_by"], people),
+        "can_delete": _can_delete(scan),
     }
+
+
+def _summaries(scans: list[dict]) -> list[dict]:
+    people = _people(scans)
+    return [_scan_summary(scan, people) for scan in scans]
 
 
 def _known_names() -> list[str]:
     """Document names used before, newest first (suggested when naming a new one)."""
+    where, params = _visible()
     rows = get_db().execute(
-        "SELECT name, MAX(id) AS newest FROM scans WHERE user_id = ? AND name IS NOT NULL AND name != '' "
-        "GROUP BY name ORDER BY newest DESC LIMIT 30", (g.user["id"],)
+        f"SELECT name, MAX(id) AS newest FROM scans WHERE {where} AND name IS NOT NULL AND name != '' "
+        "GROUP BY name ORDER BY newest DESC LIMIT 30", params
     )
     return [row["name"] for row in rows]
 
@@ -977,16 +1403,18 @@ def index():
     """Upload form and recent documents; for visitors, a way to sign in."""
     if g.user is None:
         return render_template("index.html", recent=[], names=[], total_documents=0, max_pdf_pages=MAX_PDF_PAGES)
-    total = get_db().execute("SELECT COUNT(*) FROM scans WHERE user_id = ?", (g.user["id"],)).fetchone()[0]
-    recent = [_scan_summary(scan) for scan in _user_scans(limit=5)]
+    where, params = _visible()
+    total = get_db().execute(f"SELECT COUNT(*) FROM scans WHERE {where}", params).fetchone()[0]
+    recent = _summaries(_user_scans(limit=5))
     return render_template("index.html", recent=recent, names=_known_names(), total_documents=total,
                            max_pdf_pages=MAX_PDF_PAGES)
 
 
 @app.route("/documents")
 def documents():
-    """Every document the signed-in user has saved."""
-    return render_template("documents.html", documents=[_scan_summary(scan) for scan in _user_scans()])
+    """Every document the signed-in user can see; in an organisation, ``?mine=1`` for only their own."""
+    mine = bool(g.user["org_id"]) and request.args.get("mine") == "1"
+    return render_template("documents.html", documents=_summaries(_user_scans(mine=mine)), mine=mine)
 
 
 @app.route("/lang/<code>")
@@ -999,8 +1427,8 @@ def set_language(code: str):
 
 
 def _image_url(name: str | None) -> str | None:
-    """Address of one of the signed-in user's page photos, if it exists (here or in the backup)."""
-    if (name and secure_filename(name) == name and _owns_file(name)
+    """Address of a page photo the signed-in user may see, if it exists (here or in the backup)."""
+    if (name and secure_filename(name) == name and _can_see_file(name)
             and ((PROCESSED_DIR / name).is_file() or backup.has_image(name))):
         return url_for("processed_file", filename=name)
     return None
@@ -1298,8 +1726,8 @@ def save_tables():
     now = datetime.now(timezone.utc).isoformat()
     n_rows = sum(len(t["rows"]) for t in tables)
     if editing:
-        db.execute("UPDATE scans SET name = ?, tables_json = ?, updated_at = ? WHERE id = ?",
-                   (name, json.dumps(tables, ensure_ascii=False), now, editing["id"]))
+        db.execute("UPDATE scans SET name = ?, tables_json = ?, updated_at = ?, updated_by = ? WHERE id = ?",
+                   (name, json.dumps(tables, ensure_ascii=False), now, g.user["id"], editing["id"]))
         _remove_photos(_photo_names(editing["tables"]) - _photo_names(tables))
         scan_id = editing["id"]
         message = tr("Saved your changes: {rows} row(s) in {tables} table(s).", rows=n_rows, tables=len(tables))
@@ -1308,16 +1736,18 @@ def save_tables():
         for table in tables:
             table["page"] += offset
         new_pages = len({t["page"] for t in tables})
-        db.execute("UPDATE scans SET name = ?, tables_json = ?, updated_at = ? WHERE id = ?",
+        db.execute("UPDATE scans SET name = ?, tables_json = ?, updated_at = ?, updated_by = ? WHERE id = ?",
                    (name or adding_to["name"], json.dumps(adding_to["tables"] + tables, ensure_ascii=False),
-                    now, adding_to["id"]))
+                    now, g.user["id"], adding_to["id"]))
         scan_id = adding_to["id"]
         message = tr("Added {pages} page(s) to {name}.", pages=new_pages,
                      name=name or document_label(adding_to))
     else:
+        # Saved in an organisation, a document is shared with everyone in it.
         cursor = db.execute(
-            "INSERT INTO scans (name, source_file, engine, tables_json, created_at, user_id) VALUES (?, ?, ?, ?, ?, ?)",
-            (name, source_file, engine, json.dumps(tables, ensure_ascii=False), now, g.user["id"]),
+            "INSERT INTO scans (name, source_file, engine, tables_json, created_at, user_id, org_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (name, source_file, engine, json.dumps(tables, ensure_ascii=False), now, g.user["id"], g.user["org_id"]),
         )
         scan_id = cursor.lastrowid
         message = tr("Saved {rows} row(s) in {tables} table(s) from {source}.",
@@ -1370,12 +1800,27 @@ def _photo_names(tables: list[dict]) -> set[str]:
 
 
 def _remove_photos(names: set[str]) -> None:
-    """Delete page photos no longer used by any of the user's documents, here and in the backup."""
-    still_used = set().union(*(_photo_names(scan["tables"]) for scan in _user_scans())) if names else set()
+    """Delete page photos no longer used by any document, here and in the backup."""
+    # Every document, not only the ones this user sees: a colleague's may use them.
+    every = get_db().execute("SELECT tables_json FROM scans") if names else []
+    still_used = set().union(*(_photo_names(json.loads(row[0])) for row in every))
     unused = {name for name in names - still_used if secure_filename(name) == name}
     for name in unused:
         (PROCESSED_DIR / name).unlink(missing_ok=True)
     backup.forget_images(unused)
+
+
+@app.route("/documents/<int:scan_id>/share", methods=["POST"])
+def share_document(scan_id: int):
+    """Share one of your documents saved before joining with your organisation."""
+    scan = _load_scan(scan_id)
+    if scan is None:
+        flash(tr("That document could not be found."))
+        return redirect(url_for("index"))
+    if g.user["org_id"] and scan["org_id"] is None and scan["user_id"] == g.user["id"]:
+        _share_with_organisation([scan])
+        flash(tr("Everyone in {org} can now see {name}.", org=g.user["org_name"], name=document_label(scan)))
+    return redirect(url_for("document", scan_id=scan_id))
 
 
 @app.route("/documents/<int:scan_id>/delete", methods=["GET", "POST"])
@@ -1385,11 +1830,15 @@ def delete_document(scan_id: int):
     if scan is None:
         flash(tr("That document could not be found."))
         return redirect(url_for("index"))
+    if not _can_delete(scan):
+        flash(tr("Only the person who scanned this document, or an admin of {org}, can delete it.",
+                 org=g.user["org_name"]))
+        return redirect(url_for("document", scan_id=scan_id))
     label = document_label(scan)
     if request.method == "GET":
         return render_template("delete.html", scan=scan, summary=_scan_summary(scan))
     db = get_db()
-    db.execute("DELETE FROM scans WHERE id = ? AND user_id = ?", (scan_id, g.user["id"]))
+    db.execute("DELETE FROM scans WHERE id = ?", (scan_id,))
     db.commit()
     _remove_photos(_photo_names(scan["tables"]))
     backup.mark_dirty()
@@ -1437,7 +1886,9 @@ def document_statement(scan_id: int):
         chosen = request.args.get(f"c{i}")
         column["role"] = chosen if chosen in statement.ROLES else column["guess"]
     label = document_label(scan)
-    business = request.args.get("business", label).strip()[:120] or label
+    # A shared document is the organisation's: its name is the business's.
+    default_business = g.user["org_name"] if scan["org_id"] is not None and g.user["org_name"] else label
+    business = request.args.get("business", default_business).strip()[:120] or default_business
     currency = request.args.get("currency") if request.args.get("currency") in statement.CURRENCIES else "USD"
     opening_text = request.args.get("opening", "").strip()[:30]
     result = statement.build(scan["tables"], {c["key"]: c["role"] for c in columns},
@@ -1555,7 +2006,8 @@ def _download(fmt: str, records: list[dict], columns: list[str], scans: list[dic
 
 @app.route("/export/<fmt>")
 def export(fmt: str):
-    """Download everything the signed-in user has saved, as Excel, CSV or JSON.
+    """Download everything the signed-in user can see, as Excel, CSV or JSON
+    (in an organisation, that includes its shared documents).
 
     Covers both the fixed-field records and the scans saved with their own
     headings. Excel puts each page of each scan on its own sheet, with an
@@ -1570,8 +2022,9 @@ def export(fmt: str):
     db = get_db()
     records = [dict(row) for row in db.execute(
         f"SELECT {', '.join(_RECORD_COLUMNS)} FROM records WHERE user_id = ? ORDER BY id", (g.user["id"],))]
+    where, params = _visible()
     scans = [_scan_dict(row) for row in db.execute(
-        f"SELECT {_SCAN_COLUMNS} FROM scans WHERE user_id = ? ORDER BY id", (g.user["id"],))]
+        f"SELECT {_SCAN_COLUMNS} FROM scans WHERE {where} ORDER BY id", params)]
 
     stem = _download_stem(document_label(scans[0])) if len(scans) == 1 and not records else _download_stem("MSME Ledger")
     n_rows = len(records) + sum(len(t["rows"]) for s in scans for t in s["tables"])
@@ -1589,10 +2042,11 @@ def uploaded_file(filename: str):
 
 @app.route("/processed/<path:filename>")
 def processed_file(filename: str):
-    """Serve one of the signed-in user's page photos or straightened images.
+    """Serve a page photo or straightened image the signed-in user may see.
 
-    Photos of saved documents come back from the backup after a restart."""
-    if not _owns_file(filename):
+    Photos of saved documents come back from the backup after a restart.
+    Colleagues get images only, never someone's unsaved read result (.json)."""
+    if not (_owns_file(filename) or (_can_see_file(filename) and filename.lower().endswith((".jpg", ".png")))):
         return jsonify({"error": "Not found."}), 404
     if not (PROCESSED_DIR / filename).is_file() and secure_filename(filename) == filename:
         backup.fetch_image(filename, PROCESSED_DIR)

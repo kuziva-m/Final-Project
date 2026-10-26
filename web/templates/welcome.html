@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% from "partials/people.html" import position_field %}
+{% block title %}{{ _("Welcome to {org}", org=user.org_name) }} · MSME Ledger{% endblock %}
+{% block body_class %}page-auth{% endblock %}
+{% block content %}
+  {# Straight after joining an organisation: who you are, for your colleagues. #}
+  <section class="auth">
+    <h1>{{ _("Welcome to {org}", org=user.org_name) }}</h1>
+    <p class="auth-lede">{{ _("Everyone at {org} will see your name and position beside the documents you scan.", org=user.org_name) }}</p>
+    <form method="post" action="{{ url_for('welcome', next=next) }}" class="auth-form">
+      <label class="field">
+        <span class="field-label">{{ _("Your name") }}</span>
+        <input type="text" name="name" value="{{ user.name }}" required maxlength="80" autocomplete="name">
+      </label>
+      {{ position_field(user.position, positions, _("Your position at {org}", org=user.org_name)) }}
+      <button type="submit" class="btn btn-solid">{{ _("Continue") }}</button>
+    </form>
+  </section>
+{% endblock %}

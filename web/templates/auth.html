@@ -41,7 +41,7 @@
     </form>
 
     {% else %}
-    <p class="auth-lede">{{ _("Your scans are saved in your account, and only you can see them.") }}</p>
+    <p class="auth-lede">{{ _("Your scans are saved in your account. Only you can see them, or everyone at your workplace if you join its organisation.") }}</p>
 
     <form method="post" action="{{ url_for(mode, next=request.args.get('next')) }}" class="auth-form">
       <label class="field">
@@ -53,11 +53,12 @@
         <input type="password" name="password" required {% if signing_up %}minlength="8" autocomplete="new-password"{% else %}autocomplete="current-password"{% endif %}>
         {% if signing_up %}<span class="field-hint">{{ _("At least 8 characters.") }}</span>{% endif %}
       </label>
-      {% if code_required %}
+      {% if signing_up %}
+      {# One box: an organisation's code joins it; otherwise the app's sign-up code. #}
       <label class="field">
-        <span class="field-label">{{ _("Sign-up code") }}</span>
-        <input type="text" name="code" required autocomplete="off">
-        <span class="field-hint">{{ _("Ask the app's owner for the code.") }}</span>
+        <span class="field-label">{{ _("Code") if code_required else _("Organisation code") }}{% if not code_required %} <span class="optional">{{ _("(optional)") }}</span>{% endif %}</span>
+        <input type="text" name="code" value="{{ entered_code }}" {% if code_required %}required{% endif %} maxlength="40" autocomplete="off" autocapitalize="characters" spellcheck="false">
+        <span class="field-hint">{{ _("Your workplace's code, from your manager, to share its documents.") }}{% if code_required %} {{ _("Or the sign-up code from the app's owner.") }}{% endif %}</span>
       </label>
       {% endif %}
       <button type="submit" class="btn btn-solid">{{ _("Create account") if signing_up else _("Sign in") }}</button>

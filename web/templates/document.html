@@ -6,6 +6,15 @@
     {% if saved %}<p class="saved-badge">✓ {{ _("Saved") }}</p>{% endif %}
     <h1>{{ summary.label }}</h1>
     <p class="meta">{{ summary.date }} · {{ _("1 page") if summary.pages == 1 else _("{n} pages", n=summary.pages) }} · {{ _("1 row") if summary.rows == 1 else _("{n} rows", n=summary.rows) }}</p>
+    {% from "partials/people.html" import scanned_by %}
+    {% if summary.shared %}
+    <p class="doc-by doc-by-page">{{ scanned_by(summary) }}</p>
+    {% elif user.org_id and summary.mine %}
+    <div class="notice share-notice">
+      <p>{{ _("Only you can see this document: you saved it before joining {org}.", org=user.org_name) }}</p>
+      <form method="post" action="{{ url_for('share_document', scan_id=scan.id) }}"><button type="submit" class="btn btn-outline">{{ _("Share with {org}", org=user.org_name) }}</button></form>
+    </div>
+    {% endif %}
 
     {% set xlsx_url = url_for('export_document', scan_id=scan.id, fmt='xlsx') %}
     <div class="doc-actions">
@@ -39,7 +48,9 @@
       {% endfor %}
     </ol>
 
+    {% if summary.can_delete %}
     <p class="delete-link"><a href="{{ url_for('delete_document', scan_id=scan.id) }}">{{ _("Delete this document") }}</a></p>
+    {% endif %}
 
     <section class="add-page" aria-labelledby="add-page-heading">
       <h2 id="add-page-heading">{{ _("Add another page") }}</h2>

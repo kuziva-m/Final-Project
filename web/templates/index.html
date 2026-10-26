@@ -26,14 +26,16 @@
   {% if user %}{% include "partials/busy.html" %}{% endif %}
 
   {% if recent %}
+  {% from "partials/people.html" import scanned_by %}
   <section class="recent" aria-labelledby="recent-heading">
-    <h2 id="recent-heading">{{ _("Recent documents") }}</h2>
+    <h2 id="recent-heading">{{ _("Recent documents at {org}", org=user.org_name) if user.org_id else _("Recent documents") }}</h2>
     <ul class="doc-list">
       {% for doc in recent %}
       <li>
         <a href="{{ url_for('document', scan_id=doc.id) }}">
           <span class="doc-name">{{ doc.label }}</span>
           <span class="doc-meta">{{ doc.date }} · {{ _("1 page") if doc.pages == 1 else _("{n} pages", n=doc.pages) }} · {{ _("1 row") if doc.rows == 1 else _("{n} rows", n=doc.rows) }}</span>
+          {% if user.org_id %}<span class="doc-by">{% if doc.shared %}{{ scanned_by(doc) }}{% else %}{{ _("Only you can see this") }}{% endif %}</span>{% endif %}
         </a>
       </li>
       {% endfor %}

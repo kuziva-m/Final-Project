@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% from "partials/people.html" import position_field %}
+{% block title %}{{ _("Account") }} · MSME Ledger{% endblock %}
+{% block body_class %}page-account{% endblock %}
+{% block content %}
+  <section class="settings">
+    <h1>{{ _("Your account") }}</h1>
+    <p class="meta">{{ user.email }}</p>
+
+    <section class="settings-block" aria-labelledby="details-heading">
+      <h2 id="details-heading">{{ _("Your details") }}</h2>
+      <form method="post" action="{{ url_for('save_details') }}" class="settings-form">
+        <label class="field">
+          <span class="field-label">{{ _("Your name") }}</span>
+          <input type="text" name="name" value="{{ user.name }}" maxlength="80" autocomplete="name"{% if org %} required{% endif %}>
+        </label>
+        {% if org %}{{ position_field(user.position, positions, _("Your position at {org}", org=org.name)) }}{% endif %}
+        <button type="submit" class="btn btn-outline">{{ _("Save") }}</button>
+      </form>
+    </section>
+
+    <section class="settings-block" aria-labelledby="org-heading">
+      {% if org %}
+      <h2 id="org-heading">{{ org.name }}</h2>
+      <p class="settings-lede">{{ _("Everyone here can see, download and fix every document scanned at {org}.", org=org.name) }}</p>
+
+      {% if user.org_admin %}
+      <div class="org-code">
+        <span class="field-label">{{ _("Code to join") }}</span>
+        <p class="org-code-row"><strong class="org-code-value" id="org-code">{{ org.code }}</strong>
+          <button type="button" class="btn btn-outline" data-copy="#org-code" hidden>{{ _("Copy") }}</button></p>
+        <p class="field-hint">{{ _("Give it to your staff. They type it when they create their account, or on their Account page.") }}</p>
+      </div>
+      {% else %}
+      <p class="field-hint">{{ _("To add someone, ask an admin for the code to join.") }}</p>
+      {% endif %}
+
+      <h3 class="people-heading">{{ _("People") }} <span class="people-count">{{ members|length }}</span></h3>
+      <ul class="people">
+        {% for member in members %}
+        <li>
+          <div class="person">
+            <span class="person-name">{{ member.name or member.email }}
+              {%- if member.id == user.id %} <span class="tag">{{ _("You") }}</span>{% endif %}
+              {%- if member.org_admin %} <span class="tag tag-gold">{{ _("Admin") }}</span>{% endif %}</span>
+            <span class="person-meta">{{ _(member.position) if member.position else _("No position yet") }}{% if member.name %} · {{ member.email }}{% endif %}</span>
+          </div>
+          {% if user.org_admin and member.id != user.id %}
+          <details class="person-actions">
+            <summary>{{ _("Change") }}</summary>
+            <div class="person-buttons">
+              {% if not member.org_admin %}
+              <form method="post" action="{{ url_for('make_admin', user_id=member.id) }}"><button type="submit" class="btn btn-outline">{{ _("Make admin") }}</button></form>
+              {% endif %}
+              <form method="post" action="{{ url_for('remove_member', user_id=member.id) }}"><button type="submit" class="btn btn-danger">{{ _("Remove from {org}", org=org.name) }}</button></form>
+            </div>
+          </details>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+
+      {% if personal %}
+      <div class="notice settings-notice">
+        <p>{{ _("1 document you saved before joining can only be seen by you.") if personal == 1 else _("{n} documents you saved before joining can only be seen by you.", n=personal) }}</p>
+        <form method="post" action="{{ url_for('share_all_documents') }}"><button type="submit" class="btn btn-outline">{{ _("Share them with {org}", org=org.name) }}</button></form>
+      </div>
+      {% endif %}
+
+      <div class="settings-more-list">
+        {% if user.org_admin %}
+        <details class="settings-more">
+          <summary>{{ _("Change the code") }}</summary>
+          <form method="post" action="{{ url_for('change_org_code') }}" class="settings-form">
+            <label class="field">
+              <span class="field-label">{{ _("New code") }} <span class="optional">{{ _("(optional)") }}</span></span>
+              <input type="text" name="code" maxlength="24" autocomplete="off" autocapitalize="characters" spellcheck="false">
+              <span class="field-hint">{{ _("Leave it empty and one is made up. The old code stops working; people already in {org} stay.", org=org.name) }}</span>
+            </label>
+            <button type="submit" class="btn btn-outline">{{ _("Change the code") }}</button>
+          </form>
+        </details>
+        <details class="settings-more">
+          <summary>{{ _("Rename {org}", org=org.name) }}</summary>
+          <form method="post" action="{{ url_for('rename_organisation') }}" class="settings-form">
+            <label class="field">
+              <span class="field-label">{{ _("Business name") }}</span>
+              <input type="text" name="name" value="{{ org.name }}" required maxlength="80">
+            </label>
+            <button type="submit" class="btn btn-outline">{{ _("Save") }}</button>
+          </form>
+        </details>
+        {% endif %}
+        <details class="settings-more">
+          <summary>{{ _("Leave {org}", org=org.name) }}</summary>
+          <p>{{ _("You'll stop seeing its documents. The ones you scanned stay with {org}.", org=org.name) }}</p>
+          <form method="post" action="{{ url_for('leave_organisation') }}"><button type="submit" class="btn btn-danger">{{ _("Leave {org}", org=org.name) }}</button></form>
+        </details>
+      </div>
+
+      {% else %}
+      <h2 id="org-heading">{{ _("Organisation") }}</h2>
+      <p class="settings-lede">{{ _("Several people scanning for one business? Join its organisation, and everyone there sees the same documents.") }}</p>
+      <form method="post" action="{{ url_for('join_organisation') }}" class="settings-form">
+        <label class="field">
+          <span class="field-label">{{ _("Organisation code") }}</span>
+          <input type="text" name="code" required maxlength="40" autocomplete="off" autocapitalize="characters" spellcheck="false">
+          <span class="field-hint">{{ _("Your manager has it.") }}</span>
+        </label>
+        <button type="submit" class="btn btn-solid">{{ _("Join") }}</button>
+      </form>
+      <details class="settings-more">
+        <summary>{{ _("Start an organisation for your business") }}</summary>
+        <form method="post" action="{{ url_for('create_organisation') }}" class="settings-form">
+          <label class="field">
+            <span class="field-label">{{ _("Business name") }}</span>
+            <input type="text" name="name" required maxlength="80">
+            <span class="field-hint">{{ _("You'll be its admin, with a code to give your staff.") }}</span>
+          </label>
+          <button type="submit" class="btn btn-outline">{{ _("Start it") }}</button>
+        </form>
+      </details>
+      {% endif %}
+    </section>
+
+    <section class="settings-block">
+      <form method="post" action="{{ url_for('logout') }}"><button type="submit" class="btn btn-outline">{{ _("Sign out") }}</button></form>
+    </section>
+  </section>
+{% endblock %}

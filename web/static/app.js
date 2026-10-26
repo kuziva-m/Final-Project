@@ -1356,8 +1356,40 @@
     }
   }
 
+  // --- Account: your position, and the organisation's code ----------------------------------
+
+  function initAccount() {
+    // Tapping a common position puts it in the box; typing your own still works.
+    Array.prototype.forEach.call(document.querySelectorAll(".position-field"), function (field) {
+      var input = field.querySelector("input");
+      var chips = field.querySelectorAll("[data-fill]");
+      field.querySelector(".position-picks").hidden = false;
+      field.querySelector(".position-hint").hidden = false;
+      var mark = function () {
+        Array.prototype.forEach.call(chips, function (chip) {
+          chip.setAttribute("aria-pressed", String(chip.textContent.trim() === input.value.trim()));
+        });
+      };
+      Array.prototype.forEach.call(chips, function (chip) {
+        chip.addEventListener("click", function () {
+          input.value = chip.textContent.trim();
+          mark();
+        });
+      });
+      input.addEventListener("input", mark);
+    });
+
+    Array.prototype.forEach.call(document.querySelectorAll("[data-copy]"), function (button) {
+      var source = document.querySelector(button.getAttribute("data-copy"));
+      if (!source) return;
+      button.hidden = false;
+      button.addEventListener("click", function () { copyText(source.textContent.trim()); });
+    });
+  }
+
   initUpload();
   initReview();
   initDocument();
   initStatement();
+  initAccount();
 })();

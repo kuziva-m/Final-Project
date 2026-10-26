@@ -1,0 +1,21 @@
+{# Who's who in an organisation: the position field, and who scanned a document. #}
+
+{# Your position: tap a common one (app.js fills the box) or type your own. #}
+{% macro position_field(value, positions, label) -%}
+  <div class="field position-field">
+    <label class="field-label" for="position">{{ label }}</label>
+    <div class="position-picks" hidden>
+      {% for position in positions %}
+      <button type="button" class="pick-chip" data-fill="#position" aria-pressed="{{ 'true' if value == _(position) else 'false' }}">{{ _(position) }}</button>
+      {% endfor %}
+    </div>
+    <input type="text" id="position" name="position" value="{{ value }}" required maxlength="60" autocomplete="organization-title">
+    <span class="field-hint position-hint" hidden>{{ _("Tap one, or type your own.") }}</span>
+  </div>
+{%- endmacro %}
+
+{# "Scanned by Tendai, Sales clerk · last changed by you" for a shared document. #}
+{% macro scanned_by(doc) -%}
+  {{ _("Scanned by you") if doc.mine else _("Scanned by {name}", name=doc.by) }}
+  {%- if doc.changed %} · {{ _("last changed by {name}", name=doc.changed_by) if doc.changed_by else _("last changed by you") }}{% endif %}
+{%- endmacro %}

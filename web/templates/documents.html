@@ -1,9 +1,18 @@
 {% extends "base.html" %}
-{% block title %}{{ _("My documents") }} · MSME Ledger{% endblock %}
+{% from "partials/people.html" import scanned_by %}
+{% set heading = _("Documents") if user.org_id else _("My documents") %}
+{% block title %}{{ heading }} · MSME Ledger{% endblock %}
 {% block body_class %}page-documents{% endblock %}
 {% block content %}
   <section class="doc">
-    <h1>{{ _("My documents") }}</h1>
+    <h1>{{ heading }}</h1>
+    {% if user.org_id %}
+    <p class="meta">{{ _("Everyone at {org} sees these.", org=user.org_name) }}</p>
+    <nav class="doc-filter" aria-label="{{ _('Show') }}">
+      <a href="{{ url_for('documents') }}"{% if not mine %} aria-current="page"{% endif %}>{{ _("Everyone's") }}</a>
+      <a href="{{ url_for('documents', mine=1) }}"{% if mine %} aria-current="page"{% endif %}>{{ _("Only mine") }}</a>
+    </nav>
+    {% endif %}
     {% if documents %}
     <p class="meta">{{ _("1 document") if documents|length == 1 else _("{n} documents", n=documents|length) }}</p>
     <ul class="doc-list">
@@ -12,6 +21,7 @@
         <a href="{{ url_for('document', scan_id=doc.id) }}">
           <span class="doc-name">{{ doc.label }}</span>
           <span class="doc-meta">{{ doc.date }} · {{ _("1 page") if doc.pages == 1 else _("{n} pages", n=doc.pages) }} · {{ _("1 row") if doc.rows == 1 else _("{n} rows", n=doc.rows) }}</span>
+          {% if user.org_id %}<span class="doc-by">{% if doc.shared %}{{ scanned_by(doc) }}{% else %}{{ _("Only you can see this") }}{% endif %}</span>{% endif %}
         </a>
       </li>
       {% endfor %}
@@ -22,6 +32,9 @@
       <a href="{{ url_for('export', fmt='csv') }}" download>CSV</a> ·
       <a href="{{ url_for('export', fmt='json') }}" download>JSON</a>
     </p>
+    {% elif mine %}
+    <p class="meta">{{ _("You haven't scanned anything for {org} yet.", org=user.org_name) }}</p>
+    <a class="btn btn-solid" href="{{ url_for('index') }}#upload">{{ _("Scan a ledger") }}</a>
     {% else %}
     <p class="meta">{{ _("Nothing saved yet. Scan a ledger page to get started.") }}</p>
     <a class="btn btn-solid" href="{{ url_for('index') }}#upload">{{ _("Scan a ledger") }}</a>

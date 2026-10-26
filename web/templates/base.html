@@ -13,7 +13,8 @@
   <header class="site-header{% if user %} has-user{% endif %}">
     <nav class="nav nav-left" aria-label="{{ _('Documents') }}">
       {% if user %}
-      <a href="{{ url_for('documents') }}">{{ _("My documents") }}</a>
+      {# In an organisation the documents are everyone's, not only "mine". #}
+      <a href="{{ url_for('documents') }}">{{ _("Documents") if user.org_id else _("My documents") }}</a>
       {% endif %}
     </nav>
 
@@ -25,7 +26,11 @@
     <nav class="nav nav-right" aria-label="{{ _('Primary') }}">
       {% if user %}
       <span class="account">
-        <span class="account-email" title="{{ _('Signed in as {email}', email=user.email) }}">{{ user.email }}</span>
+        {# The full name and organisation on wide screens, "Account" on phones. #}
+        <a class="account-link" href="{{ url_for('account') }}" title="{{ _('Signed in as {email}', email=user.email) }}">
+          <span class="account-email">{{ user.name or user.email }}{% if user.org_name %} · {{ user.org_name }}{% endif %}</span>
+          <span class="account-short">{{ _("Account") }}</span>
+        </a>
         <form method="post" action="{{ url_for('logout') }}"><button type="submit" class="link-button">{{ _("Sign out") }}</button></form>
       </span>
       <a class="btn btn-outline" href="{{ url_for('index') }}#upload">{{ _("Scan a ledger") }}</a>
@@ -56,7 +61,7 @@
     <span class="crest"><img src="{{ url_for('static', filename='logo.png') }}" alt="{{ _('Chinhoyi University of Technology crest') }}" width="48" height="48" loading="lazy"></span>
     <p>Chinhoyi University of Technology</p>
     {# On phones the header has no room for the address, so it is here. #}
-    {% if user %}<p class="footer-account">{{ _("Signed in as {email}", email=user.email) }}</p>{% endif %}
+    {% if user %}<p class="footer-account">{{ _("Signed in as {email}", email=user.email) }}{% if user.org_name %} · {{ user.org_name }}{% endif %}</p>{% endif %}
     <nav class="languages" aria-label="{{ _('Language') }}">
       {% set back = request.full_path.rstrip('?') if request.method == 'GET' else url_for('index') %}
       {% for code, label in LANGUAGES.items() %}
