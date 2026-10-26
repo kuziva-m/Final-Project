@@ -136,6 +136,8 @@
                 <input class="table-title" type="text" name="title_{{ t }}" value="{{ table.title }}" placeholder="{{ _('Table {n}', n=loop.index) }}" aria-label="{{ _('Table title') }}">
               </div>
 
+              {# Shown by app.js when the table is wider than the screen. #}
+              <p class="swipe-hint" hidden>{{ _("Swipe the table sideways to see every column.") }}</p>
               <div class="sheet">
                 <table>
                   <thead>
@@ -178,6 +180,8 @@
           <div class="page-tables">
             <div class="table-block">
               <div class="table-tools"></div>
+              {# Shown by app.js when the table is wider than the screen. #}
+              <p class="swipe-hint" hidden>{{ _("Swipe the table sideways to see every column.") }}</p>
               <div class="sheet">
                 <table>
                   <thead>

@@ -653,7 +653,11 @@
 
     function changed(table) {
       dirty = true;
-      if (table) updateTotals(table);
+      if (table) {
+        updateTotals(table);
+        fitTable(table);
+        updateHint(table);
+      }
       updateSummary();
     }
 
@@ -669,6 +673,55 @@
       Array.prototype.forEach.call(table.tBodies[0].rows, function (row) { row.appendChild(toolsCell()); });
       updateTotals(table);
     });
+
+    // --- Columns as wide as what is written in them --------------------------------
+    // An equal share of a phone's width cuts dates and names off, so each column
+    // gets room for its longest entry (within reason), and the table scrolls
+    // sideways when that is wider than the screen, with a hint saying so.
+
+    var CELL_MAX = 24, HEADING_MAX = 18;
+
+    function fitTable(table) {
+      var rows = table.tBodies[0].rows;
+      Array.prototype.forEach.call(table.tHead.rows[0].cells, function (th, i) {
+        if (th.classList.contains("row-tools")) return;
+        var inputs = [];
+        Array.prototype.forEach.call(rows, function (row) {
+          var input = row.cells[i] && row.cells[i].querySelector("input");
+          if (input) inputs.push(input);
+        });
+        var longest = inputs.reduce(function (most, input) { return Math.max(most, input.value.length); }, 0);
+        var width = "calc(" + Math.min(Math.max(longest, 3), CELL_MAX) + "ch + 1.1rem)";
+        inputs.forEach(function (input) { input.style.minWidth = width; });
+        var heading = th.querySelector("input");
+        if (heading) {
+          // Spaced capitals take about 1.4ch each.
+          var letters = Math.min(Math.max((heading.value || heading.placeholder).length, 3), HEADING_MAX);
+          heading.style.minWidth = "calc(" + (letters * 1.4).toFixed(1) + "ch + 1.1rem)";
+        }
+      });
+    }
+
+    function updateHint(table) {
+      var sheet = table.closest(".sheet");
+      var hint = sheet.previousElementSibling;
+      // A table on a page not being shown measures 0: wait until it is shown.
+      if (!sheet.clientWidth) return;
+      var wide = sheet.scrollWidth > sheet.clientWidth + 4;
+      sheet.classList.toggle("is-wide", wide);
+      if (hint && hint.classList.contains("swipe-hint")) hint.hidden = !wide;
+    }
+
+    function fitAll() {
+      Array.prototype.forEach.call(form.querySelectorAll(".sheet table"), function (table) {
+        fitTable(table);
+        updateHint(table);
+      });
+    }
+
+    fitAll();
+    window.addEventListener("load", fitAll);
+    window.addEventListener("resize", fitAll);
 
     // --- Column tools: insert and delete, with undo (tables read with their own headings) ---
 
@@ -782,15 +835,19 @@
     var pagerSelect = document.getElementById("pager-select");
     var current = 0;
 
-    function showPage(index, focusTop) {
+    function showPage(index, focusTop, initial) {
       if (!pager) return;
       current = Math.max(0, Math.min(pages.length - 1, index));
       pages.forEach(function (page, i) { page.classList.toggle("is-current", i === current); });
       pagerSelect.value = String(current);
       pager.querySelector('[data-step="-1"]').disabled = current === 0;
       pager.querySelector('[data-step="1"]').disabled = current === pages.length - 1;
-      if (window.history && history.replaceState) history.replaceState(null, "", "#" + pages[current].id);
+      // Not on the first showing: a #page-1 added while the page is still
+      // loading makes the browser jump to it once loading ends, past the
+      // name and the page buttons.
+      if (!initial && window.history && history.replaceState) history.replaceState(null, "", "#" + pages[current].id);
       if (focusTop) pager.scrollIntoView({ block: "start" });
+      fitAll();
     }
 
     if (pager && pages.length > 1) {
@@ -802,7 +859,7 @@
       });
       pagerSelect.addEventListener("change", function () { showPage(parseInt(pagerSelect.value, 10), true); });
       var fromHash = pages.findIndex(function (page) { return "#" + page.id === window.location.hash; });
-      showPage(fromHash === -1 ? 0 : fromHash, false);
+      showPage(fromHash === -1 ? 0 : fromHash, false, true);
 
       // Swipe left/right to change page, except where the swipe scrolls a wide table or a zoomed photo.
       var startX = null, startY = 0;

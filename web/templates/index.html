@@ -2,7 +2,7 @@
 {% block title %}MSME Ledger Digitisation{% endblock %}
 {% block body_class %}page-home{% endblock %}
 {% block content %}
-  <section class="hero">
+  <section class="hero{% if user %} hero-signed-in{% endif %}">
     <div class="hero-copy">
       <h1>{{ _("Digitise handwritten ledgers") }}</h1>
       <p class="lede">{{ _("Photo in. Editable table out.") }}</p>

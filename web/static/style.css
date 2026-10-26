@@ -530,9 +530,22 @@ button:disabled {
 .sheet {
   max-height: 70vh;
   overflow: auto;
-  background: var(--paper);
+  /* A shadow at a side with more columns past it. Paper-coloured covers move
+     with the table and hide each shadow once that side is reached. */
+  background:
+    linear-gradient(to right, var(--paper) 40%, rgba(251, 250, 246, 0)) left center / 2.5rem 100% no-repeat local,
+    linear-gradient(to left, var(--paper) 40%, rgba(251, 250, 246, 0)) right center / 2.5rem 100% no-repeat local,
+    radial-gradient(farthest-side at 0 50%, rgba(11, 16, 64, 0.3), rgba(11, 16, 64, 0)) left center / 1rem 100% no-repeat scroll,
+    radial-gradient(farthest-side at 100% 50%, rgba(11, 16, 64, 0.3), rgba(11, 16, 64, 0)) right center / 1rem 100% no-repeat scroll,
+    var(--paper);
   color: var(--ink);
   box-shadow: 12px 12px 0 var(--navy);
+}
+
+.swipe-hint {
+  margin: 0 0 0.6rem;
+  font-size: 0.92rem;
+  color: var(--muted);
 }
 
 table {
@@ -1442,6 +1455,7 @@ tfoot td.total-label {
 }
 
 .site-footer p { margin: 0; }
+.footer-account { display: none; }
 
 .crest {
   width: 48px;
@@ -1588,10 +1602,76 @@ tfoot td.total-label {
 
   .page-grid { grid-template-columns: minmax(0, 1fr); gap: 1.25rem; }
   .viewer { position: static; }
-  .viewer-frame { height: 32vh; }
+  /* As tall as the photo, so a wide page leaves no empty white below it. */
+  .viewer-frame { height: auto; max-height: 40vh; }
 }
 
 @media (max-width: 600px) {
+  /* Header: the emblem and Sign out on one row, the two places to go under
+     them, instead of four stacked rows taking a third of the screen. The
+     address moves to the footer. */
+  .site-header {
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas: "brand brand" "left right";
+    justify-items: stretch;
+    gap: 0.75rem;
+    padding-top: 0.9rem;
+    padding-bottom: 1.1rem;
+  }
+  .site-header:not(.has-user) { grid-template-areas: "brand brand"; }
+  .site-header:not(.has-user) .nav-left { display: none; }
+  .site-header .brand { grid-area: brand; justify-self: start; }
+  .site-header .emblem { width: 40px; height: 40px; }
+  .site-header .nav-left { grid-area: left; justify-self: stretch; }
+  .site-header .nav-right { display: contents; }
+  .site-header .account { grid-area: brand; justify-self: end; }
+  .site-header .account-email { display: none; }
+  .site-header .account .link-button { min-height: 44px; padding: 0 0.25rem; }
+  .site-header .nav-right > .btn { grid-area: right; }
+  .site-header:not(.has-user) .nav-right > .btn { grid-area: brand; justify-self: end; }
+  .site-header .nav-left a:not(.btn),
+  .site-header .nav-right > .btn {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    justify-content: center;
+    min-height: 48px;
+    padding: 0.6rem 0.5rem;
+    border: 1.5px solid var(--white);
+    font-size: 1rem;
+    font-weight: 500;
+    text-align: center;
+  }
+  .footer-account { display: block; flex-basis: 100%; color: var(--muted); font-size: 0.92rem; }
+
+  /* Home: signed in, the photo buttons come into the first screen. */
+  .hero { min-height: 0; gap: 1.5rem; padding-top: 0.75rem; padding-bottom: 3rem; }
+  .hero h1 { font-size: 2.6rem; margin-bottom: 0.75rem; }
+  .lede { font-size: 1.3rem; }
+  .hero-emblem .emblem { width: 120px; }
+  .hero-signed-in .hero-emblem { display: none; }
+  .upload-form { margin-top: 1.75rem; }
+
+  /* Previous, the page list and Next fit one row. */
+  .pager { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 0.5rem; }
+  .pager .btn { padding: 0.6rem 0.8rem; }
+  .pager select { width: 100%; min-width: 0; min-height: 48px; }
+
+  /* Columns size to what is in them (app.js), not to an equal share. */
+  .sheet table { min-width: 0; }
+
+  /* Room for a thumb on links and small controls. */
+  .languages a, .languages span[aria-current],
+  .more-downloads a, .delete-link a, .back-link a, .see-all a, .auth-switch a, .forgot-link {
+    display: inline-block;
+    padding: 0.55rem 0;
+  }
+  .table-tools .link-button { min-height: 44px; }
+  .table-title { padding: 0.55rem 0; }
+  .delete-page { min-height: 44px; }
+  .details summary { padding: 0.7rem 0; }
+  .viewer-bar { gap: 0.5rem; }
+
   /* Steps stack, each drawing small beside its text */
   .howto ol { grid-template-columns: 1fr; gap: 1.75rem; }
   .howto li { flex-direction: row; align-items: flex-start; gap: 1.25rem; }
@@ -1608,7 +1688,7 @@ tfoot td.total-label {
   .row-tools button { width: 2.75rem; height: 2.75rem; }
   .col-tools button { width: 2.5rem; height: 2.5rem; }
   .js .rows-form[data-mode="tables"] thead th input[type="text"] { width: calc(100% - 5.4rem); }
-  .viewer-zoom button { min-width: 3rem; min-height: 2.75rem; }
+  .viewer-zoom button { min-width: 2.75rem; min-height: 2.75rem; }
   .viewer-views button { min-height: 2.75rem; }
   .nav a:not(.btn) { padding: 0.5rem 0; }
 

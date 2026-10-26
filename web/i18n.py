@@ -32,6 +32,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "New column": "Koramu itsva",
         "A table needs at least one column.": "Tafura inoda koramu imwe chete zvichikwira.",
         "Column “{name}” deleted.": "Koramu “{name}” yabviswa.",
+        "Swipe the table sideways to see every column.": "Svaipa tafura kudivi kuti uone makoramu ese.",
         "Column deleted.": "Koramu yabviswa.",
         # Accounts
         "Sign in": "Pinda",
@@ -311,6 +312,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "New column": "Ikholomu entsha",
         "A table needs at least one column.": "Ithebula lidinga okungenani ikholomu eyodwa.",
         "Column “{name}” deleted.": "Ikholomu “{name}” isusiwe.",
+        "Swipe the table sideways to see every column.": "Swayipha ithebula eceleni ukuze ubone wonke amakholomu.",
         "Column deleted.": "Ikholomu isusiwe.",
         # Accounts
         "Sign in": "Ngena",

@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body class="{% block body_class %}{% endblock %}">
-  <header class="site-header">
+  <header class="site-header{% if user %} has-user{% endif %}">
     <nav class="nav nav-left" aria-label="{{ _('Documents') }}">
       {% if user %}
       <a href="{{ url_for('documents') }}">{{ _("My documents") }}</a>
@@ -55,6 +55,8 @@
   <footer class="site-footer">
     <span class="crest"><img src="{{ url_for('static', filename='logo.png') }}" alt="{{ _('Chinhoyi University of Technology crest') }}" width="48" height="48" loading="lazy"></span>
     <p>Chinhoyi University of Technology</p>
+    {# On phones the header has no room for the address, so it is here. #}
+    {% if user %}<p class="footer-account">{{ _("Signed in as {email}", email=user.email) }}</p>{% endif %}
     <nav class="languages" aria-label="{{ _('Language') }}">
       {% set back = request.full_path.rstrip('?') if request.method == 'GET' else url_for('index') %}
       {% for code, label in LANGUAGES.items() %}
