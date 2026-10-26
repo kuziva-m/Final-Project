@@ -81,6 +81,7 @@ def build_workbook(records: list[dict], record_columns: list[str], scans: list[d
     title_font = Font(bold=True, size=12)
     header_font = Font(bold=True, color="FFFFFF")
     header_fill = PatternFill("solid", fgColor="0B1040")
+    unsure_fill = PatternFill("solid", fgColor="FBE8B8")  # cells the reader wasn't sure of
 
     wb = Workbook()
     wb.remove(wb.active)
@@ -106,14 +107,17 @@ def build_workbook(records: list[dict], record_columns: list[str], scans: list[d
         ws.append([text])
         ws[ws.max_row][0].font = title_font
 
-    def write_rows(ws, rows, lead: list | None = None):
-        """Rows of text cells; *lead* holds per-row values prepended as-is (e.g. page)."""
+    def write_rows(ws, rows, lead: list | None = None, unsure: set | None = None):
+        """Rows of text cells; *lead* holds per-row values prepended as-is (e.g. page).
+        Cells in *unsure* ((row, col) pairs) are shaded amber, as on the review page."""
         date_cols = _date_columns(rows) if tidy else set()
         for i, row in enumerate(rows):
             values = [_convert(v, tidy, c in date_cols) for c, v in enumerate(row)]
             prefix = [lead[i]] if lead else []
             ws.append(prefix + values)
-            for cell, value, raw in zip(ws[ws.max_row][len(prefix):], values, row):
+            for c, (cell, value, raw) in enumerate(zip(ws[ws.max_row][len(prefix):], values, row)):
+                if unsure and (i, c) in unsure:
+                    cell.fill = unsure_fill
                 if isinstance(value, float):
                     decimals = len(raw.strip().split(".")[1]) if "." in raw else 0
                     cell.number_format = "#,##0." + "0" * decimals if decimals else "#,##0"
@@ -154,14 +158,16 @@ def build_workbook(records: list[dict], record_columns: list[str], scans: list[d
             for page in sorted(pages):
                 for table in pages[page]:
                     key = tuple(c.strip().lower() for c in table["columns"])
-                    groups.setdefault(key, [table["columns"], [], []])
+                    groups.setdefault(key, [table["columns"], [], [], set()])
+                    start = len(groups[key][1])
                     groups[key][1].extend(table["rows"])
                     groups[key][2].extend([page] * len(table["rows"]))
-            for i, (columns, rows, page_numbers) in enumerate(groups.values()):
+                    groups[key][3].update((start + r, c) for r, c in table.get("unsure") or [])
+            for i, (columns, rows, page_numbers, flagged) in enumerate(groups.values()):
                 if i:
                     ws.append([])
                 header_row = write_header(ws, ["Page"] + list(columns))
-                write_rows(ws, rows, lead=page_numbers)
+                write_rows(ws, rows, lead=page_numbers, unsure=flagged)
                 if i == 0:
                     ws.freeze_panes = f"A{header_row + 1}"
                     if len(groups) == 1 and rows:
@@ -178,7 +184,7 @@ def build_workbook(records: list[dict], record_columns: list[str], scans: list[d
                 header_row = write_header(ws, table["columns"])
                 if i == 0:
                     ws.freeze_panes = f"A{header_row + 1}"
-                write_rows(ws, table["rows"])
+                write_rows(ws, table["rows"], unsure={(r, c) for r, c in table.get("unsure") or []})
             fit_columns(ws)
 
     buf = io.BytesIO()

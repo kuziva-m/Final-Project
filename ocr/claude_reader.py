@@ -19,6 +19,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -58,7 +59,21 @@ Reading rules:
 - Keep each value in its own column; never join two columns' values into one cell.
 - When the same name or item repeats on the page, spell it the same way each time.
 - If a cell holds only a ditto mark (such as " or 〃 or ^ or "do"), write just " -- \
-it is filled in automatically."""
+it is filled in automatically.
+- If you can read a word or number but are not sure you read it correctly (smudged, \
+faded or unclear handwriting), write your best guess inside double square brackets, \
+like [[Vimbai]] or [[150]]. Only mark words you are genuinely unsure of; most cells \
+need no brackets."""
+
+# Words Claude marks as unsure, [[like this]]: the brackets are removed and
+# the cell is flagged so the review page can shade it for checking.
+_UNSURE_MARK = re.compile(r"\[\[(.*?)\]\]", re.S)
+
+
+def _take_unsure(cell: str) -> tuple[str, bool]:
+    """*cell* without unsure marks, and whether it had any."""
+    clean = _UNSURE_MARK.sub(r"\1", cell).replace("[[", "").replace("]]", "")  # also a mark left unclosed
+    return clean.strip(), clean != cell
 
 _ROWS_PROMPT += _READING_RULES
 
@@ -216,15 +231,24 @@ def _ask(image_path: str | os.PathLike, prompt: str, schema: dict) -> dict:
 def read_rows(image_path: str | os.PathLike) -> list[dict]:
     """Transcribe the ledger in *image_path* into FIELDNAMES rows."""
     rows = _ask(image_path, _ROWS_PROMPT, _ROWS_SCHEMA).get("rows", [])
-    cells = tidy_rows([[str(row.get(field, "")).strip() for field in FIELDNAMES] for row in rows])
-    return [dict(zip(FIELDNAMES, row)) for row in cells]
+    marked = [[_take_unsure(str(row.get(field, ""))) for field in FIELDNAMES] for row in rows]
+    cells = tidy_rows([[text for text, _ in row] for row in marked])
+    result = []
+    for row, marks in zip(cells, marked):
+        entry = dict(zip(FIELDNAMES, row))
+        unsure = [field for field, (_, flagged) in zip(FIELDNAMES, marks) if flagged]
+        if unsure:
+            entry["unsure"] = unsure  # fields Claude wasn't sure it read correctly
+        result.append(entry)
+    return result
 
 
 def read_tables(image_path: str | os.PathLike) -> list[dict]:
     """Transcribe every table on the page using the page's own headings.
 
-    Returns ``[{"title": str, "columns": [str, ...], "rows": [[str, ...], ...]}]``
-    with every row padded or trimmed to the number of columns.
+    Returns ``[{"title": str, "columns": [str, ...], "rows": [[str, ...], ...],
+    "unsure": [[row, col], ...]}]`` with every row padded or trimmed to the
+    number of columns; ``unsure`` lists the cells Claude marked as uncertain.
     """
     tables = []
     for table in _ask(image_path, _TABLES_PROMPT, _TABLES_SCHEMA).get("tables", []):
@@ -232,11 +256,14 @@ def read_tables(image_path: str | os.PathLike) -> list[dict]:
         if not columns:
             continue
         width = len(columns)
-        rows = tidy_rows([
-            ([str(cell).strip() for cell in row] + [""] * width)[:width]
+        marked = [
+            ([_take_unsure(str(cell)) for cell in row] + [("", False)] * width)[:width]
             for row in table.get("rows", [])
-        ])
-        tables.append({"title": str(table.get("title", "")).strip(), "columns": columns, "rows": rows})
+        ]
+        rows = tidy_rows([[text for text, _ in row] for row in marked])
+        unsure = [[r, c] for r, row in enumerate(marked) for c, (_, flagged) in enumerate(row) if flagged]
+        tables.append({"title": str(table.get("title", "")).strip(), "columns": columns, "rows": rows,
+                       "unsure": unsure})
     return tables
 
 

@@ -539,7 +539,11 @@
 
     // --- Unsure cells, summary, totals -----------------------------------------
 
+    // A cell is amber while it has a "?" or the reader marked it as unsure;
+    // once someone edits it, the reader's mark no longer applies.
     function markUnsure(input) {
+      input.removeAttribute("data-flagged");
+      input.removeAttribute("title");
       input.classList.toggle("unsure", input.value.indexOf("?") !== -1);
     }
 
@@ -1265,12 +1269,16 @@
           Array.prototype.forEach.call(headings, function (input, c) { input.name = "col_" + t + "_" + c; });
           form.querySelector('input[name="num_cols_' + t + '"]').value = headings.length;
           var rows = block.querySelector("tbody").rows;
+          var flagged = [];
           Array.prototype.forEach.call(rows, function (row, r) {
             Array.prototype.forEach.call(row.querySelectorAll("input"), function (input, c) {
               input.name = "cell_" + t + "_" + r + "_" + c;
+              if (input.hasAttribute("data-flagged")) flagged.push(r + ":" + c);
             });
           });
           form.querySelector('input[name="num_rows_' + t + '"]').value = rows.length;
+          var unsure = form.querySelector('input[name="unsure_' + t + '"]');
+          if (unsure) unsure.value = flagged.join(";");
         });
       } else {
         var rows = form.querySelector("tbody").rows;

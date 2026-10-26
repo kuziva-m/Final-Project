@@ -78,7 +78,7 @@
         {%- else %}{{ _("Check your table") }}{% endif -%}
       </h1>
       <p class="summary" id="summary">{{ counts(summary.pages, summary.rows, summary.unsure) }}</p>
-      <p class="review-hint">{{ _("Fix anything read wrong. Cells with ? are amber: the reader wasn't sure.") }}</p>
+      <p class="review-hint">{{ _("Fix anything read wrong. Amber cells are the ones the reader wasn't sure of.") }}</p>
     </div>
 
     {% if free_reader %}
@@ -131,6 +131,7 @@
               <input type="hidden" name="num_cols_{{ t }}" value="{{ table.columns|length }}">
               <input type="hidden" name="num_rows_{{ t }}" value="{{ table.rows|length }}">
               <input type="hidden" name="page_{{ t }}" value="{{ table.page or 1 }}">
+              <input type="hidden" name="unsure_{{ t }}" value="{% for r, c in table.unsure or [] %}{{ r }}:{{ c }}{% if not loop.last %};{% endif %}{% endfor %}">
               <input type="hidden" name="image_{{ t }}" value="{{ table.image or '' }}">
               <div class="table-tools">
                 <input class="table-title" type="text" name="title_{{ t }}" value="{{ table.title }}" placeholder="{{ _('Table {n}', n=loop.index) }}" aria-label="{{ _('Table title') }}">
@@ -148,11 +149,13 @@
                     </tr>
                   </thead>
                   <tbody>
+                    {% set flagged = table.unsure or [] %}
                     {% for row in table.rows %}
                     {% set r = loop.index0 %}
                     <tr>
                       {% for cell in row %}
-                      <td><input type="text" name="cell_{{ t }}_{{ r }}_{{ loop.index0 }}" value="{{ cell }}"{% if '?' in cell %} class="unsure"{% endif %} aria-label="{{ table.columns[loop.index0] }}, {{ _('row {n}', n=r + 1) }}"></td>
+                      {% set doubtful = [r, loop.index0] in flagged %}
+                      <td><input type="text" name="cell_{{ t }}_{{ r }}_{{ loop.index0 }}" value="{{ cell }}"{% if '?' in cell or doubtful %} class="unsure"{% endif %}{% if doubtful %} data-flagged="1" title="{{ _('The reader wasn\'t sure about this. Check it against the photo.') }}"{% endif %} aria-label="{{ table.columns[loop.index0] }}, {{ _('row {n}', n=r + 1) }}{% if doubtful %}, {{ _('check this') }}{% endif %}"></td>
                       {% endfor %}
                     </tr>
                     {% endfor %}
@@ -199,7 +202,8 @@
                     <tr>
                       {% for field, label in (("date", _("Date")), ("item", _("Item")), ("qty", _("Qty")), ("price", _("Price")), ("total", _("Total"))) %}
                       {% set value = row[field] or "" %}
-                      <td><input type="text" name="{{ field }}_{{ r }}" data-field="{{ field }}" value="{{ value }}"{% if '?' in value %} class="unsure"{% endif %} aria-label="{{ label }}, {{ _('row {n}', n=r + 1) }}"></td>
+                      {% set doubtful = field in (row.unsure or []) %}
+                      <td><input type="text" name="{{ field }}_{{ r }}" data-field="{{ field }}" value="{{ value }}"{% if '?' in value or doubtful %} class="unsure"{% endif %}{% if doubtful %} title="{{ _('The reader wasn\'t sure about this. Check it against the photo.') }}"{% endif %} aria-label="{{ label }}, {{ _('row {n}', n=r + 1) }}"></td>
                       {% endfor %}
                     </tr>
                     {% endfor %}

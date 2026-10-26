@@ -279,9 +279,14 @@ _failed_lock = threading.Lock()
 _MAX_FAILURES, _FAILURE_WINDOW = 10, 15 * 60
 
 
+def _normal_code(text: str) -> str:
+    """A sign-up code as compared: case, spaces and quotes around it don't matter."""
+    return text.strip().strip("'\"").strip().casefold()
+
+
 def _signup_code() -> str:
     """When LEDGER_SIGNUP_CODE is set, creating an account needs it."""
-    return os.environ.get("LEDGER_SIGNUP_CODE", "").strip()
+    return _normal_code(os.environ.get("LEDGER_SIGNUP_CODE", ""))
 
 
 def _too_many_failures(email: str) -> bool:
@@ -437,7 +442,7 @@ def signup():
             error = tr("Enter a valid email address.")
         elif len(password) < _MIN_PASSWORD:
             error = tr("Use a password of at least {n} characters.", n=_MIN_PASSWORD)
-        elif code and not hmac.compare_digest(request.form.get("code", "").strip(), code):
+        elif code and not hmac.compare_digest(_normal_code(request.form.get("code", "")), code):
             error = tr("That sign-up code isn't right. Ask the app's owner for it.")
         else:
             db = get_db()
@@ -1001,6 +1006,19 @@ def _image_url(name: str | None) -> str | None:
     return None
 
 
+def _unsure_count(artifacts: dict) -> int:
+    """Cells to check: ones with "?" for unreadable characters, plus words the
+    reader marked as unsure."""
+    tables = artifacts.get("tables")
+    if tables:
+        flagged = {(t, r, c) for t, table in enumerate(tables) for r, c in table.get("unsure") or []}
+        question = {(t, r, c) for t, table in enumerate(tables) for r, row in enumerate(table["rows"])
+                    for c, cell in enumerate(row) if "?" in cell}
+        return len(flagged | question)
+    return sum(1 for row in artifacts["rows"] for field in FIELDNAMES
+               if "?" in str(row.get(field, "")) or field in (row.get("unsure") or []))
+
+
 def _cells_and_rows(artifacts: dict) -> tuple[list[str], int]:
     """Every cell of a read result, and how many rows it has."""
     tables = artifacts.get("tables")
@@ -1061,7 +1079,7 @@ def _render_review(artifacts: dict, scan: dict | None = None):
         append_to=append_to,
         names=_known_names(),
         summary={"pages": max(len(groups), len(page_urls), 1), "rows": n_rows,
-                 "unsure": sum("?" in cell for cell in cells)},
+                 "unsure": _unsure_count(artifacts)},
     )
 
 
@@ -1122,7 +1140,7 @@ def process():
                 _email_images(), link=_public_url("review", token=token),
                 name=document_label({"name": artifacts.get("doc_name"), "source_file": artifacts["source_file"],
                                      "id": 0}),
-                pages=max(len(views), 1), rows=n_rows, unsure=sum("?" in cell for cell in cells)))
+                pages=max(len(views), 1), rows=n_rows, unsure=_unsure_count(artifacts)))
         review_url = url_for("review", token=token)
         _progress_update(token, stage="done", review_url=review_url)
         return jsonify({"review_url": review_url})
@@ -1239,10 +1257,18 @@ def save_tables():
         n_cols = _form_int(f"num_cols_{t}", _MAX_COLS)
         n_rows = _form_int(f"num_rows_{t}", _MAX_ROWS)
         columns = [request.form.get(f"col_{t}_{c}", "").strip() for c in range(n_cols)]
-        rows = []
+        # Cells still marked as unsure ("row:col;row:col"), kept so the
+        # amber shading survives saving until someone corrects them.
+        flagged = set()
+        for pair in request.form.get(f"unsure_{t}", "").split(";")[: _MAX_ROWS * _MAX_COLS]:
+            r_text, _, c_text = pair.partition(":")
+            if r_text.isdigit() and c_text.isdigit():
+                flagged.add((int(r_text), int(c_text)))
+        rows, unsure = [], []
         for r in range(n_rows):
             row = [request.form.get(f"cell_{t}_{r}_{c}", "").strip() for c in range(n_cols)]
             if any(row):
+                unsure += [[len(rows), c] for c in range(n_cols) if (r, c) in flagged]
                 rows.append(row)
         if rows:
             image = request.form.get(f"image_{t}", "")
@@ -1252,6 +1278,7 @@ def save_tables():
                 "rows": rows,
                 "page": _form_int(f"page_{t}", _MAX_PAGE) or 1,
                 "image": image if _image_url(image) else None,
+                "unsure": unsure,
             })
 
     target = editing or adding_to

@@ -147,6 +147,11 @@ STRINGS: dict[str, dict[str, str]] = {
         "Add pages to {name}": "Wedzera mapeji ku: {name}",
         "Fix anything read wrong. Cells with ? are amber: the reader wasn't sure.":
             "Gadzirisa chero chakaverengwa zvisizvo. Masero ane ? ane ruvara rweyero: muverengi akanga asina chokwadi.",
+        "Fix anything read wrong. Amber cells are the ones the reader wasn't sure of.":
+            "Gadzirisa chero chakaverengwa zvisizvo. Masero eyero ndeaya muverengi aisava nechokwadi nawo.",
+        "The reader wasn't sure about this. Check it against the photo.":
+            "Muverengi aisava nechokwadi nechinhu ichi. Chitarise pamufananidzo.",
+        "check this": "tarisa izvi",
         "Read with the free reader, which is less accurate. Please check every row.":
             "Zvaverengwa nemuverengi wemahara, asinganyatsorurama. Tarisa mutsara wega wega.",
         "Why: {reason}": "Chikonzero: {reason}",
@@ -427,6 +432,11 @@ STRINGS: dict[str, dict[str, str]] = {
         "Add pages to {name}": "Engeza amakhasi ku: {name}",
         "Fix anything read wrong. Cells with ? are amber: the reader wasn't sure.":
             "Lungisa okufundwe kabi. Amaseli ano-? aphuzi: umfundi wayengaqinisekanga.",
+        "Fix anything read wrong. Amber cells are the ones the reader wasn't sure of.":
+            "Lungisa okufundwe kabi. Amaseli aphuzi ngawo umfundi ayengaqinisekanga ngawo.",
+        "The reader wasn't sure about this. Check it against the photo.":
+            "Umfundi wayengaqinisekanga ngalokhu. Kuhlole esithombeni.",
+        "check this": "hlola lokhu",
         "Read with the free reader, which is less accurate. Please check every row.":
             "Kufundwe ngomfundi wamahhala, ongaqondisisi kangako. Hlola umugqa ngamunye.",
         "Why: {reason}": "Isizatho: {reason}",
