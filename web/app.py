@@ -6,8 +6,10 @@ No new OCR/preprocessing/extraction logic lives here; this module only wires
 together the existing pipeline:
 
     preprocessing.clean.preprocess -- deskew/denoise/CLAHE/binarise
-    ocr.fusion.run_engines         -- Tesseract-on-cleaned + EasyOCR-on-raw
-    ocr.fusion.fuse_from_texts     -- fused into structured rows + provenance
+    ocr.offline.read_page          -- the free reader on one page: a ruled
+                                      table read into its own columns
+                                      (ocr/grid.py), else Tesseract-on-cleaned
+                                      + EasyOCR-on-raw fused into rows
 
 See ocr/fusion.py for the fusion rule: Tesseract's rows are the structural
 skeleton (date, item, column layout); EasyOCR supplies clean numeric values
@@ -76,8 +78,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
 from extraction.fields import FIELDNAMES
-from ocr import claude_reader
-from ocr.fusion import fuse_from_texts, run_engines
+from ocr import claude_reader, offline
 from preprocessing.clean import preprocess
 from preprocessing.pdf_pages import PdfError, render_pages
 from web.backup import Backup
@@ -1109,6 +1110,25 @@ def _progress_page_done(token: str | None, index: int) -> None:
             entry["updated"] = time.time()
 
 
+def _fixed_table(rows: list[dict]) -> dict:
+    """Fixed Date / Item / Qty / Price / Total rows as a table for the review page."""
+    return {"columns": [tr("Date"), tr("Item"), tr("Qty"), tr("Price"), tr("Total")],
+            "rows": [[str(row.get(field, "") or "") for field in FIELDNAMES] for row in rows],
+            "unsure": []}
+
+
+def _offline_table(read: offline.PageRead) -> dict | None:
+    """One page's free-reader result as a table: the page's own columns if it
+    is ruled, else fixed columns, else the lines of text it read."""
+    if read.table:
+        return read.table
+    if read.rows:
+        return _fixed_table(read.rows)
+    if read.lines:
+        return {"columns": [tr("Text")], "rows": [[line] for line in read.lines], "unsure": []}
+    return None
+
+
 def _run_pipeline_on_upload(upload, detect_tables: bool = False) -> tuple[dict | None, str | None]:
     """Save *upload*, then run the pipeline on it (see _run_pipeline_on_file)."""
     source_path, error = _save_upload(upload)
@@ -1157,7 +1177,9 @@ def _run_pipeline_on_file(source_path: Path, detect_tables: bool = False,
         if img is None:
             return None
         clean_path = PROCESSED_DIR / f"{page_path.stem}_clean.png"
-        cleaned = preprocess(img, save_path=clean_path)
+        # Cleaning a full-size phone photo takes several times longer and
+        # reads no better.
+        cleaned = preprocess(offline.shrink(img), save_path=clean_path)
         if short_scan:
             _write_straight(cleaned, page_path.stem)
         return clean_path
@@ -1209,25 +1231,38 @@ def _run_pipeline_on_file(source_path: Path, detect_tables: bool = False,
         fallback_reason = "no API key is set"
 
     if rows is None:
-        # Tesseract-on-cleaned (row structure) + EasyOCR-on-raw (clean values),
-        # each engine called once per page, then fused with provenance -- which
-        # engine won each field -- so the review UI can show what fusion
-        # auto-corrected.
-        rows, provenance = [], []
+        # The free reader (ocr/offline.py), page by page: a ruled table is read
+        # into its own columns; otherwise Tesseract-on-cleaned (row structure)
+        # and EasyOCR-on-raw (clean values) are fused into fixed rows, with
+        # provenance -- which engine won each field; failing both, the lines
+        # of text read are kept so there is something to correct.
+        rows, provenance, tables = [], [], []
         fallback_pages = page_paths[:_fallback_page_cap()]
         _progress_update(token, total=len(fallback_pages), done=set(), fallback=True)
         for i, page_path in enumerate(fallback_pages):
-            clean_path = cleaned[i] if i in cleaned else clean_page(page_path)
-            if clean_path is not None:
-                tesseract_text, easyocr_text = run_engines(page_path, processed_path=clean_path)
-                page_rows, page_prov = fuse_from_texts(tesseract_text, easyocr_text, return_provenance=True)
-                rows.extend(page_rows)
-                provenance.extend(page_prov)
+            read = offline.read_page(
+                page_path, lambda i=i, page_path=page_path: cleaned[i] if i in cleaned else clean_page(page_path),
+                want_table=detect_tables)
+            if detect_tables:
+                table = _offline_table(read)
+                if table:
+                    tables.append({"title": "", **table, "page": i + 1, "image": pages[i].get("view")})
+            else:
+                rows.extend(read.rows or [{**{k: "" for k in FIELDNAMES}, "item": line} for line in read.lines])
+                provenance.extend(read.provenance or [{} for _ in read.lines])
             page_done(i)
         used_engine = "fused (tesseract + easyocr)"
         if fallback_reason and claude_reader.is_enabled():
             used_engine += f" -- Claude unavailable: {fallback_reason}"
         pages_read = len(fallback_pages)
+        if detect_tables:
+            if not tables:
+                # Never dead-end the owner with nothing to correct.
+                tables = [{"title": "", **_fixed_table([{k: "" for k in FIELDNAMES}]), "page": 1,
+                           "image": pages[0].get("view")}]
+                used_engine = "none (manual entry)"
+            return {**files, "tables": tables, "used_engine": used_engine, "fallback_reason": fallback_reason,
+                    "pages_note": _pages_note(pages_read, total_pages, is_pdf)}, None
 
     if not rows:
         # Never dead-end the owner with nothing to correct -- give one blank row.
@@ -2096,4 +2131,7 @@ if __name__ == "__main__":
         print(f"  On phones on the same Wi-Fi: http://{ip}:{port}")
     reader = "Claude, with the free reader as backup" if claude_reader.is_enabled() else "the free reader (offline)"
     print(f"  Reading pages with {reader}.  Press Ctrl+C to stop.\n")
+    if not claude_reader.is_enabled():
+        # Load the free reader's model now rather than on the first scan.
+        threading.Thread(target=offline.warm_up, name="easyocr-warm-up", daemon=True).start()
     app.run(host="0.0.0.0", port=port, debug=debug, threaded=True)

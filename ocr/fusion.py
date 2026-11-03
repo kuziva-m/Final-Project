@@ -217,6 +217,15 @@ def fuse_from_texts(
     te_rows = extract_fields(tesseract_text)  # skeleton: dates, items, layout
     eo_rows = extract_fields(easyocr_text)    # clean values, structure may be lost
 
+    # Tesseract often reads no date at all from handwriting, which used to
+    # leave nothing. EasyOCR's rows then stand as the skeleton on their own.
+    skeleton = "tesseract"
+    if not te_rows and eo_rows:
+        te_rows, eo_rows, skeleton = eo_rows, [], "easyocr"
+
+    def won_by(winner: str) -> str:
+        return skeleton if winner == "tesseract" else winner
+
     fused: list[dict] = []
     provenance: list[dict] = []
 
@@ -228,6 +237,7 @@ def fuse_from_texts(
         qty, qty_win = _choose_numeric(te.get("qty", ""), eo.get("qty", ""), _valid_int)
         price, price_win = _choose_numeric(te.get("price", ""), eo.get("price", ""), _valid_money)
         total, total_win = _choose_numeric(te.get("total", ""), eo.get("total", ""), _valid_money)
+        date_win, qty_win, price_win, total_win = map(won_by, (date_win, qty_win, price_win, total_win))
 
         if price and total:
             # Numeric fields are complete -- any trailing digits still stuck

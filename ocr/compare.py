@@ -20,6 +20,7 @@ import argparse
 import csv
 import os
 import shutil
+import threading
 from collections import defaultdict
 from pathlib import Path
 
@@ -75,19 +76,23 @@ def _use_gpu() -> bool:
 # ---------------------------------------------------------------------------
 
 _EASYOCR_READER = None
+_EASYOCR_LOCK = threading.Lock()
 
 
 def _get_easyocr_reader() -> easyocr.Reader:
     """Build the EasyOCR reader once and cache it.
 
     Uses the model files in EASYOCR_MODEL_DIR; only if they are missing does
-    EasyOCR try to download them (which needs the internet)."""
+    EasyOCR try to download them (which needs the internet). Safe to call
+    from several threads: the app loads it in the background at start-up
+    while a first scan may already be waiting for it."""
     global _EASYOCR_READER
-    if _EASYOCR_READER is None:
-        EASYOCR_MODEL_DIR.mkdir(parents=True, exist_ok=True)
-        have_models = all((EASYOCR_MODEL_DIR / name).is_file() for name in EASYOCR_MODEL_FILES)
-        _EASYOCR_READER = easyocr.Reader(["en"], gpu=_use_gpu(), model_storage_directory=str(EASYOCR_MODEL_DIR),
-                                         download_enabled=not have_models)
+    with _EASYOCR_LOCK:
+        if _EASYOCR_READER is None:
+            EASYOCR_MODEL_DIR.mkdir(parents=True, exist_ok=True)
+            have_models = all((EASYOCR_MODEL_DIR / name).is_file() for name in EASYOCR_MODEL_FILES)
+            _EASYOCR_READER = easyocr.Reader(["en"], gpu=_use_gpu(), model_storage_directory=str(EASYOCR_MODEL_DIR),
+                                             download_enabled=not have_models)
     return _EASYOCR_READER
 
 

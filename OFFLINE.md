@@ -7,9 +7,12 @@ phone app) exactly as they would online.
 Offline, pages are read by the built-in free reader (Tesseract + EasyOCR)
 instead of Claude, so:
 
-- tables come out in fixed columns (Date, Item, Qty, Price, Total) rather than
-  each document's own headings;
+- a page ruled into columns (lines drawn down the page between them) keeps its
+  own columns and headings. Other pages come out in fixed columns (Date, Item,
+  Qty, Price, Total). If neither works, you get the lines of text the reader
+  saw, to tidy up by hand;
 - reading is slower and less accurate on messy handwriting, so check every row.
+  Cells the reader wasn't sure of are shaded amber.
 
 Accounts, saving, editing, deleting, and Excel/CSV/JSON downloads all work the
 same. Saved data stays in the `data` folder on the laptop.
@@ -80,10 +83,15 @@ the window each time you start the app.
 - **Speed**: in a test on a 4-core processor with no internet, a phone photo
   took about 5 seconds and a full A4 PDF page about 16 seconds. A slower
   laptop takes longer. A PDF is read page by page with progress shown, up to
-  40 pages. The reader uses about 4 GB of memory while it works.
+  40 pages. The reader uses about 4 GB of memory while it works, and loads
+  its model when the app starts, so give it a few seconds before the first
+  scan.
 - **Settings**: you can set these before `python -m web.app`, or edit
   `start_offline.bat`:
   - `LEDGER_MAX_PDF_PAGES` changes the page limit.
+  - `LEDGER_OCR_MAX_EDGE` is the size big photos are shrunk to before
+    reading (default 2000 pixels on the longest side). Lower is faster; raise
+    it if small writing comes out wrong.
   - `LEDGER_TESSERACT_CMD` points to `tesseract.exe` if it's installed elsewhere.
   - `LEDGER_EASYOCR_GPU=1` uses an NVIDIA graphics card. That also needs the
     CUDA build of PyTorch.

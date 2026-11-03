@@ -53,6 +53,44 @@ _MONEY_RE = re.compile(r"^[£$€]?\d+[.,]\d{1,2}$")
 _INT_RE = re.compile(r"^\d+$")
 
 
+# A date as OCR often garbles a handwritten one: letters standing in for
+# digits ("29.1l.17", "O2/12/I7"), a comma for the dot, or spaces around the
+# separators ("29. 11. 17"). Both separators must be the same character, which
+# keeps "2 - 3.50" (a quantity and a price) from looking like a date.
+_LOOSE_DATE_RE = re.compile(
+    r"(?<![\w./,-])([\w|!]{1,2})\s?([./,-])\s?([\w|!]{1,2})\s?\2\s?([\w|!]{2,4})(?![\w|!])"
+)
+_DIGIT_LOOKALIKES = str.maketrans({
+    "O": "0", "o": "0", "D": "0", "Q": "0",
+    "I": "1", "l": "1", "i": "1", "L": "1", "|": "1", "!": "1",
+    "Z": "2", "z": "2", "S": "5", "s": "5", "b": "6", "G": "6", "B": "8", "g": "9", "q": "9",
+})
+
+
+def _repair_dates(line: str) -> str:
+    """Rewrite garbled dates in *line* as clean ones ("29.1l.17" -> "29.11.17").
+
+    Only a match that already has at least four real digits, turns entirely
+    into digits once look-alike letters are swapped, and reads as a real day
+    and month is changed; anything else is left exactly as it was.
+    """
+
+    def fix(m: re.Match) -> str:
+        day, sep, month, year = m.group(1), m.group(2), m.group(3), m.group(4)
+        if sum(ch.isdigit() for ch in day + month + year) < 4:
+            return m.group(0)
+        day, month, year = (part.translate(_DIGIT_LOOKALIKES) for part in (day, month, year))
+        if not (day + month + year).isdigit():
+            return m.group(0)
+        a, b = int(day), int(month)
+        if not ((1 <= a <= 31 and 1 <= b <= 12) or (1 <= a <= 12 and 1 <= b <= 31)):
+            return m.group(0)
+        sep = "." if sep == "," else sep
+        return f"{day}{sep}{month}{sep}{year}"
+
+    return _LOOSE_DATE_RE.sub(fix, line)
+
+
 def _find_date(text: str) -> str:
     """Return the first date substring in *text*, or ''."""
     m = _DATE_RE.search(text)
@@ -237,7 +275,7 @@ def extract_fields(ocr_text: str) -> list[dict]:
     """
     if not ocr_text or not ocr_text.strip():
         return []
-    lines = [ln.strip() for ln in ocr_text.splitlines() if ln.strip()]
+    lines = [_repair_dates(ln.strip()) for ln in ocr_text.splitlines() if ln.strip()]
     if not lines:
         return []
     if _detect_shape(lines) == "flat":
