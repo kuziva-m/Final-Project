@@ -148,13 +148,13 @@ def model_name() -> str:
     return os.environ.get("LEDGER_CLAUDE_MODEL", DEFAULT_MODEL)
 
 
-def _encode_image(image_path: Path) -> str:
+def _encode_image(image_path: Path, prepared: bool = False) -> str:
     img = cv2.imread(str(image_path), cv2.IMREAD_COLOR)
     if img is None:
         raise ClaudeReadError(f"Could not read image {image_path.name}.")
     # Crops to the writing and fits a fixed pixel budget, which also keeps the
     # upload far below the API's 5 MB image limit.
-    img = prepare_for_vision(img)
+    img = prepare_for_vision(img, already_prepared=prepared)
     ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 90])
     if not ok:
         raise ClaudeReadError("Could not encode image for upload.")
@@ -173,14 +173,15 @@ def _final_text(content) -> str:
     return "".join(parts)
 
 
-def _ask(image_path: str | os.PathLike, prompt: str, schema: dict) -> dict:
-    """Send the photo and *prompt* to Claude; return the JSON answer."""
+def _ask(image_path: str | os.PathLike, prompt: str, schema: dict, prepared: bool = False) -> dict:
+    """Send the photo and *prompt* to Claude; return the JSON answer. *prepared*:
+    the photo was already cropped and sized by prepare_for_vision."""
     import anthropic  # imported lazily so the app runs without the package
 
     # Extra retries: parallel page reads can briefly hit rate limits, and the
     # SDK backs off and retries those automatically.
     client = anthropic.Anthropic(timeout=90.0, max_retries=4)
-    image_b64 = _encode_image(Path(image_path))
+    image_b64 = _encode_image(Path(image_path), prepared)
     model = model_name()
     fallback = (
         {"betas": ["server-side-fallback-2026-07-01"], "fallbacks": "default"}
@@ -228,9 +229,9 @@ def _ask(image_path: str | os.PathLike, prompt: str, schema: dict) -> dict:
         raise ClaudeReadError("the answer was not valid JSON") from exc
 
 
-def read_rows(image_path: str | os.PathLike) -> list[dict]:
+def read_rows(image_path: str | os.PathLike, prepared: bool = False) -> list[dict]:
     """Transcribe the ledger in *image_path* into FIELDNAMES rows."""
-    rows = _ask(image_path, _ROWS_PROMPT, _ROWS_SCHEMA).get("rows", [])
+    rows = _ask(image_path, _ROWS_PROMPT, _ROWS_SCHEMA, prepared).get("rows", [])
     marked = [[_take_unsure(str(row.get(field, ""))) for field in FIELDNAMES] for row in rows]
     cells = tidy_rows([[text for text, _ in row] for row in marked])
     result = []
@@ -243,7 +244,7 @@ def read_rows(image_path: str | os.PathLike) -> list[dict]:
     return result
 
 
-def read_tables(image_path: str | os.PathLike) -> list[dict]:
+def read_tables(image_path: str | os.PathLike, prepared: bool = False) -> list[dict]:
     """Transcribe every table on the page using the page's own headings.
 
     Returns ``[{"title": str, "columns": [str, ...], "rows": [[str, ...], ...],
@@ -251,7 +252,7 @@ def read_tables(image_path: str | os.PathLike) -> list[dict]:
     number of columns; ``unsure`` lists the cells Claude marked as uncertain.
     """
     tables = []
-    for table in _ask(image_path, _TABLES_PROMPT, _TABLES_SCHEMA).get("tables", []):
+    for table in _ask(image_path, _TABLES_PROMPT, _TABLES_SCHEMA, prepared).get("tables", []):
         columns = [str(c).strip() for c in table.get("columns", [])]
         if not columns:
             continue

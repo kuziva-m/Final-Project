@@ -20,6 +20,11 @@ When ANTHROPIC_API_KEY is set, ocr/claude_reader.py reads the photo instead
 and returns rows in the same shape; if that call fails, the fusion above is
 used. The engine that produced the rows is always reported as used_engine.
 
+A laptop without a key can be connected to the online app (Account page):
+ocr/online_reader.py then sends each page to the online app's /api/read,
+which reads it with Claude, and any page that doesn't come back is read by
+the free reader instead.
+
 Documents read with their own headings are saved in the scans table and get
 their own page (/documents/<id>) to download, share, edit or add pages to.
 
@@ -58,6 +63,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 import cv2
+import numpy as np
 from flask import (
     Flask,
     flash,
@@ -78,7 +84,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
 from extraction.fields import FIELDNAMES
-from ocr import claude_reader, offline
+from ocr import claude_reader, offline, online_reader
 from preprocessing.clean import preprocess
 from preprocessing.pdf_pages import PdfError, render_pages
 from web.backup import Backup
@@ -249,6 +255,9 @@ def init_db() -> None:
             """
         )
         conn.execute("CREATE TABLE IF NOT EXISTS app_state (key TEXT PRIMARY KEY, value TEXT)")
+        # Pages each account has had read through /api/read (laptops), per day.
+        conn.execute("CREATE TABLE IF NOT EXISTS read_usage (user_id INTEGER NOT NULL, day TEXT NOT NULL, "
+                     "pages INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (user_id, day))")
         # Columns added after the first release; older databases get them here.
         for table, columns in (("scans", ("name TEXT", "updated_at TEXT", "user_id INTEGER", "org_id INTEGER",
                                           "updated_by INTEGER")),
@@ -727,7 +736,39 @@ def account():
         members = _members(g.user["org_id"])
         personal = db.execute("SELECT COUNT(*) FROM scans WHERE user_id = ? AND org_id IS NULL",
                               (g.user["id"],)).fetchone()[0]
-    return render_template("account.html", org=org, members=members, personal=personal, positions=POSITIONS)
+    online = None
+    if not claude_reader.is_enabled():  # a laptop: offer reading through the online app
+        online = {"config": online_reader.config(), "status": None, "error": None}
+        if online["config"]:
+            try:
+                online["status"] = online_reader.status()
+            except online_reader.OnlineReadError as exc:
+                online["error"] = str(exc)
+    return render_template("account.html", org=org, members=members, personal=personal, positions=POSITIONS,
+                           online=online)
+
+
+@app.route("/account/online-reader", methods=["POST"])
+def connect_online_reader():
+    """Connect this laptop to the online app, so Claude reads its pages when there is internet."""
+    if claude_reader.is_enabled():
+        return redirect(url_for("account"))
+    try:
+        info = online_reader.connect(request.form.get("url", ""), request.form.get("email", ""),
+                                     request.form.get("password", ""))
+    except online_reader.OnlineReadError as exc:
+        flash(tr("Could not connect: {reason}", reason=str(exc)))
+    else:
+        flash(tr("Connected. When there is internet, Claude reads your pages through {host} "
+                 "({n} pages a day).", host=online_reader.host(), n=info.get("daily_pages", "?")))
+    return redirect(url_for("account") + "#online-reader")
+
+
+@app.route("/account/online-reader/disconnect", methods=["POST"])
+def disconnect_online_reader():
+    online_reader.disconnect()
+    flash(tr("Disconnected. Pages are read by the free reader on this computer."))
+    return redirect(url_for("account") + "#online-reader")
 
 
 def _save_details() -> bool:
@@ -1129,6 +1170,43 @@ def _offline_table(read: offline.PageRead) -> dict | None:
     return None
 
 
+def _free_rows(read: offline.PageRead) -> tuple[list[dict], list[dict]]:
+    """One page's free-reader result as fixed rows and their provenance; the
+    lines of text it read become rows of their own when nothing else did."""
+    if read.rows:
+        return read.rows, read.provenance
+    return [{**{k: "" for k in FIELDNAMES}, "item": line} for line in read.lines], [{} for _ in read.lines]
+
+
+def _valid_tables(tables) -> list[dict]:
+    """Tables from the online app, held to the shape the review page expects."""
+    out = []
+    for table in tables if isinstance(tables, list) else []:
+        if not isinstance(table, dict) or not isinstance(table.get("columns"), list) or not table["columns"]:
+            continue
+        columns = [str(c) for c in table["columns"]][:_MAX_COLS]
+        rows = [([str(cell) for cell in row] + [""] * len(columns))[:len(columns)]
+                for row in table.get("rows") or [] if isinstance(row, list)][:_MAX_ROWS]
+        unsure = [[r, c] for r, c in (pair for pair in table.get("unsure") or []
+                                      if isinstance(pair, list) and len(pair) == 2)
+                  if isinstance(r, int) and isinstance(c, int)]
+        out.append({"title": str(table.get("title", "")), "columns": columns, "rows": rows or [[""] * len(columns)],
+                    "unsure": unsure})
+    return out
+
+
+def _valid_rows(rows) -> list[dict]:
+    """Fixed rows from the online app, held to FIELDNAMES."""
+    out = []
+    for row in rows if isinstance(rows, list) else []:
+        if isinstance(row, dict):
+            entry = {k: str(row.get(k, "") or "") for k in FIELDNAMES}
+            if isinstance(row.get("unsure"), list):
+                entry["unsure"] = [f for f in row["unsure"] if f in FIELDNAMES]
+            out.append(entry)
+    return out
+
+
 def _run_pipeline_on_upload(upload, detect_tables: bool = False) -> tuple[dict | None, str | None]:
     """Save *upload*, then run the pipeline on it (see _run_pipeline_on_file)."""
     source_path, error = _save_upload(upload)
@@ -1205,6 +1283,11 @@ def _run_pipeline_on_file(source_path: Path, detect_tables: bool = False,
     def page_done(index: int) -> None:
         _progress_page_done(token, index)
 
+    def free_read(i: int, page_path: Path) -> offline.PageRead:
+        """Page *i* read by the free reader (ocr/offline.py)."""
+        return offline.read_page(page_path, lambda: cleaned[i] if i in cleaned else clean_page(page_path),
+                                 want_table=detect_tables)
+
     rows = None
     fallback_reason = ""
     if claude_reader.is_enabled():
@@ -1227,6 +1310,43 @@ def _run_pipeline_on_file(source_path: Path, detect_tables: bool = False,
         except claude_reader.ClaudeReadError as exc:
             app.logger.warning("Claude read failed, falling back to OCR fusion: %s", exc)
             fallback_reason = str(exc)
+    elif online_reader.is_enabled():
+        # A laptop connected to the online app: Claude reads each page there.
+        results, online_engine = online_reader.read_pages(page_paths, tables=detect_tables, on_page_done=page_done)
+        failed = [i for i, result in enumerate(results) if isinstance(result, online_reader.OnlineReadError)]
+        if len(failed) == len(results):
+            app.logger.warning("Online read failed, using the free reader: %s", results[0])
+            fallback_reason = str(results[0])
+        else:
+            # Pages the online app didn't read (the connection dropped, the
+            # day's page limit ran out) are read here by the free reader.
+            used_engine = online_engine
+            if failed:
+                used_engine += (f" -- page(s) {', '.join(str(i + 1) for i in failed)} read by the free reader: "
+                                f"{results[failed[0]]}")
+            if detect_tables:
+                tables = []
+                for i, result in enumerate(results):
+                    view = pages[i].get("view")
+                    if i in failed:
+                        table = _offline_table(free_read(i, page_paths[i]))
+                        if table:
+                            tables.append({**table, "title": tr("Read with the free reader: {reason}",
+                                                                reason=str(result)), "page": i + 1, "image": view})
+                    else:
+                        tables.extend({**table, "page": i + 1, "image": view} for table in _valid_tables(result))
+                if not tables:
+                    tables = [{"title": "", "columns": ["Column 1", "Column 2", "Column 3"],
+                               "rows": [["", "", ""]], "page": 1, "image": pages[0].get("view")}]
+                return {**files, "tables": tables, "used_engine": used_engine, "fallback_reason": "",
+                        "pages_note": _pages_note(len(page_paths), total_pages, is_pdf)}, None
+            rows, provenance = [], []
+            for i, result in enumerate(results):
+                page_rows, page_prov = (_free_rows(free_read(i, page_paths[i])) if i in failed
+                                        else (_valid_rows(result), None))
+                rows.extend(page_rows)
+                provenance.extend(page_prov or [{} for _ in page_rows])
+            pages_read = len(page_paths)
     else:
         fallback_reason = "no API key is set"
 
@@ -1240,16 +1360,15 @@ def _run_pipeline_on_file(source_path: Path, detect_tables: bool = False,
         fallback_pages = page_paths[:_fallback_page_cap()]
         _progress_update(token, total=len(fallback_pages), done=set(), fallback=True)
         for i, page_path in enumerate(fallback_pages):
-            read = offline.read_page(
-                page_path, lambda i=i, page_path=page_path: cleaned[i] if i in cleaned else clean_page(page_path),
-                want_table=detect_tables)
+            read = free_read(i, page_path)
             if detect_tables:
                 table = _offline_table(read)
                 if table:
                     tables.append({"title": "", **table, "page": i + 1, "image": pages[i].get("view")})
             else:
-                rows.extend(read.rows or [{**{k: "" for k in FIELDNAMES}, "item": line} for line in read.lines])
-                provenance.extend(read.provenance or [{} for _ in read.lines])
+                page_rows, page_prov = _free_rows(read)
+                rows.extend(page_rows)
+                provenance.extend(page_prov)
             page_done(i)
         used_engine = "fused (tesseract + easyocr)"
         if fallback_reason and claude_reader.is_enabled():
@@ -1977,6 +2096,78 @@ def api_scan():
         "raw_url": url_for("uploaded_file", filename=artifacts["raw_filename"]),
         "processed_url": url_for("processed_file", filename=artifacts["processed_filename"]),
     })
+
+
+# ---------------------------------------------------------------------------
+# Reading for laptops -- a laptop running this app without an API key sends
+# each page here (ocr/online_reader.py) and gets Claude's reading back. It
+# signs in with an /api/login token; each answer carries a fresh one. Each
+# account may have LEDGER_READ_DAILY_PAGES pages a day read this way, and the
+# page is deleted as soon as it has been read.
+# ---------------------------------------------------------------------------
+
+READ_DAILY_PAGES = max(0, _env_int("LEDGER_READ_DAILY_PAGES", 200))
+
+
+def _today() -> str:
+    return datetime.now(timezone.utc).date().isoformat()
+
+
+def _pages_read_today(user_id: int) -> int:
+    row = get_db().execute("SELECT pages FROM read_usage WHERE user_id = ? AND day = ?",
+                           (user_id, _today())).fetchone()
+    return row["pages"] if row else 0
+
+
+def _fresh_api_token() -> str:
+    """A new token for the signed-in user, so a laptop in regular use stays signed in."""
+    key = get_db().execute("SELECT session_key FROM users WHERE id = ?", (g.user["id"],)).fetchone()[0]
+    return _api_tokens.dumps({"uid": g.user["id"], "key": key})
+
+
+@app.route("/api/read/status")
+def api_read_status():
+    """Whether this app can read pages for a laptop, and how many it may today."""
+    return jsonify({"claude": claude_reader.is_enabled(), "daily_pages": READ_DAILY_PAGES,
+                    "read_today": _pages_read_today(g.user["id"]), "token": _fresh_api_token()})
+
+
+@app.route("/api/read", methods=["POST"])
+def api_read():
+    """Read one page for a laptop. Body: the page image (JPEG or PNG).
+    ``?mode=tables`` (the page's own headings, default) or ``rows`` (fixed
+    fields); ``&prepared=1`` when the laptop already cropped and sized it."""
+    if not claude_reader.is_enabled():
+        return jsonify({"error": "the online app has no Claude key set"}), 503
+    used = _pages_read_today(g.user["id"])
+    if used >= READ_DAILY_PAGES:
+        return jsonify({"error": f"this account has used its {READ_DAILY_PAGES} pages for today"}), 429
+    mode = request.args.get("mode", "tables")
+    if mode not in ("tables", "rows"):
+        return jsonify({"error": "mode must be tables or rows"}), 400
+    data = request.get_data(cache=False)
+    if not data or cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR) is None:
+        return jsonify({"error": "the page was not an image"}), 400
+
+    path = UPLOADS_DIR / f"read_{secrets.token_hex(12)}.img"
+    path.write_bytes(data)
+    prepared = request.args.get("prepared") == "1"
+    try:
+        if mode == "tables":
+            result = {"tables": claude_reader.read_tables(path, prepared=prepared)}
+        else:
+            result = {"rows": claude_reader.read_rows(path, prepared=prepared)}
+    except claude_reader.ClaudeReadError as exc:
+        return jsonify({"error": f"Claude could not read it: {exc}"}), 502
+    finally:
+        path.unlink(missing_ok=True)
+
+    db = get_db()
+    db.execute("INSERT INTO read_usage (user_id, day, pages) VALUES (?, ?, 1) "
+               "ON CONFLICT (user_id, day) DO UPDATE SET pages = pages + 1", (g.user["id"], _today()))
+    db.commit()
+    return jsonify({**result, "engine": f"Claude vision ({claude_reader.model_name()})",
+                    "read_today": used + 1, "daily_pages": READ_DAILY_PAGES, "token": _fresh_api_token()})
 
 
 @app.route("/api/save", methods=["POST"])

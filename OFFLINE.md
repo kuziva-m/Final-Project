@@ -95,16 +95,39 @@ the window each time you start the app.
   - `LEDGER_TESSERACT_CMD` points to `tesseract.exe` if it's installed elsewhere.
   - `LEDGER_EASYOCR_GPU=1` uses an NVIDIA graphics card. That also needs the
     CUDA build of PyTorch.
-- **Using Claude on the laptop**: if the laptop does have internet and you
-  want Claude to read the pages, start the app with the key set instead of
-  using `start_offline.bat`:
-
-  ```
-  set ANTHROPIC_API_KEY=your-key
-  python -m web.app
-  ```
+- **Using Claude on the laptop**: see "Reading with Claude when there is
+  internet" below. Don't put the API key itself on a laptop you hand out:
+  anyone with the laptop could copy it and spend your credit.
 
 - **Backups**: the online version backs up to Hugging Face; the laptop
   doesn't. Copy the `data` folder to a USB stick now and then.
 - **Sign-in**: the laptop keeps its sign-in key in `data\secret_key`, so
   people stay signed in across restarts. Don't share that file.
+
+## Reading with Claude when there is internet
+
+The laptop can send pages to the online app (the Hugging Face Space), where
+Claude reads them, and fall back to the free reader whenever there's no
+internet. The API key stays on the online app; the laptop never has it.
+
+1. Make an account on the online app if you don't have one.
+2. On the laptop, open **Account** and fill in **Read with Claude when there
+   is internet**: the online app's address (for example
+   `https://your-name-msme-ledger.hf.space`, or its huggingface.co/spaces
+   page), and that account's email and password. Click **Connect**.
+
+From then on, each page is cropped and shrunk on the laptop (a few hundred KB)
+and sent to the online app. If a page doesn't come back (the connection
+dropped, or the day's page limit ran out), the free reader reads that page
+and its table says so. With no internet at all, every page is read by the
+free reader, as before.
+
+- The password is used once and not kept. The laptop keeps a sign-in token in
+  `data\online_reader.json`, which renews itself while the laptop is in use.
+  If a laptop is lost, change that account's password on the online app.
+- Each account can have 200 pages a day read this way. The online app's
+  owner changes that with `LEDGER_READ_DAILY_PAGES` in the Space's settings.
+- The online app deletes each page as soon as it has read it.
+- The online app needs this version of the code too: deploy it to the Space
+  before connecting a laptop.
+

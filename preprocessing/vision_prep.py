@@ -74,8 +74,16 @@ def _fit_budget(img: np.ndarray) -> np.ndarray:
     return img
 
 
-def prepare_for_vision(img: np.ndarray) -> np.ndarray:
-    """Crop to the sheet and its writing, lift faded ink, fit the pixel budget."""
+def prepare_for_vision(img: np.ndarray, already_prepared: bool = False) -> np.ndarray:
+    """Crop to the sheet and its writing, lift faded ink, fit the pixel budget.
+
+    *already_prepared*: the image went through this function before (a laptop
+    prepares pages before sending them to the online app to read), so it only
+    has to be held to the pixel budget -- cropping and lifting the ink a
+    second time would change it again.
+    """
+    if already_prepared:
+        return _fit_budget(img)
     img = _crop_to_paper(img)
     img = _crop_to_writing(img)
     img = _lift_faded_ink(img)

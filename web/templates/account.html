@@ -123,6 +123,42 @@
       {% endif %}
     </section>
 
+    {% if online %}
+    <section class="settings-block" id="online-reader" aria-labelledby="online-heading">
+      <h2 id="online-heading">{{ _("Read with Claude when there is internet") }}</h2>
+      {% if online.config %}
+      <p class="settings-lede">{{ _("This computer sends pages to {host}, where Claude reads them. With no internet, the free reader on this computer reads them instead.", host=online.config.url.split('://', 1)[-1]) }}</p>
+      <p>{{ _("Connected as {email}.", email=online.config.email) }}
+        {% if online.status %}{{ _("Pages read today: {n} of {max}.", n=online.status.read_today, max=online.status.daily_pages) }}
+        {% elif online.error %}<strong>{{ online.error }}</strong>
+        {% else %}{{ _("The online app can't be reached right now.") }}{% endif %}</p>
+      <p class="field-hint">{{ _("If this computer is lost, change that account's password on the online app: this computer then stops being able to use it.") }}</p>
+      <form method="post" action="{{ url_for('disconnect_online_reader') }}">
+        <button type="submit" class="btn btn-outline">{{ _("Disconnect") }}</button>
+      </form>
+      {% endif %}
+      {% if not online.config or online.error %}
+      {% if not online.config %}<p class="settings-lede">{{ _("Connect this computer to the online app, and Claude reads your pages there whenever there is internet. With no internet, the free reader on this computer reads them.") }}</p>{% endif %}
+      <form method="post" action="{{ url_for('connect_online_reader') }}" class="settings-form">
+        <label class="field">
+          <span class="field-label">{{ _("Online app address") }}</span>
+          <input type="text" inputmode="url" name="url" required value="{{ online.config.url if online.config else '' }}" placeholder="https://…hf.space" autocomplete="url" spellcheck="false">
+        </label>
+        <label class="field">
+          <span class="field-label">{{ _("Email on the online app") }}</span>
+          <input type="email" name="email" required value="{{ online.config.email if online.config else '' }}" autocomplete="off">
+        </label>
+        <label class="field">
+          <span class="field-label">{{ _("Password on the online app") }}</span>
+          <input type="password" name="password" required autocomplete="off">
+          <span class="field-hint">{{ _("Used once to connect; it isn't kept on this computer.") }}</span>
+        </label>
+        <button type="submit" class="btn btn-solid">{{ _("Connect") }}</button>
+      </form>
+      {% endif %}
+    </section>
+    {% endif %}
+
     <section class="settings-block">
       <form method="post" action="{{ url_for('logout') }}"><button type="submit" class="btn btn-outline">{{ _("Sign out") }}</button></form>
     </section>

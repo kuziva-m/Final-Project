@@ -40,3 +40,6 @@ models/
 
 # Secret key created by web/app.py when FLASK_SECRET_KEY isn't set
 data/secret_key
+# This laptop's sign-in to the online app (ocr/online_reader.py)
+data/online_reader.json
+data/online_reader.tmp
