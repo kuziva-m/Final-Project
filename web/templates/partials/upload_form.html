@@ -22,4 +22,9 @@
   </div>
   <p class="file-summary" id="file-summary" aria-live="polite" hidden></p>
   <p class="tip">{{ _("Tip: lay the page flat, use daylight, and fit the whole page in the frame.") }}</p>
+  {% if reader_mode == "online" %}
+  <p class="tip">{{ _("Claude reads your pages when there is internet; without it, the free reader on this computer does.") }}</p>
+  {% elif reader_mode == "free" and user %}
+  <p class="tip">{{ _("Pages are read by the free reader on this computer.") }} <a href="{{ url_for('account') }}#online-reader">{{ _("Read with Claude instead") }}</a></p>
+  {% endif %}
 </form>

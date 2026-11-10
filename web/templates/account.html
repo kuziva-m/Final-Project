@@ -142,7 +142,7 @@
       <form method="post" action="{{ url_for('connect_online_reader') }}" class="settings-form">
         <label class="field">
           <span class="field-label">{{ _("Online app address") }}</span>
-          <input type="text" inputmode="url" name="url" required value="{{ online.config.url if online.config else '' }}" placeholder="https://…hf.space" autocomplete="url" spellcheck="false">
+          <input type="text" inputmode="url" name="url" required value="{{ online.config.url if online.config else online.default_url }}" placeholder="https://…hf.space" autocomplete="url" spellcheck="false">
         </label>
         <label class="field">
           <span class="field-label">{{ _("Email on the online app") }}</span>

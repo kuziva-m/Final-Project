@@ -43,3 +43,5 @@ data/secret_key
 # This laptop's sign-in to the online app (ocr/online_reader.py)
 data/online_reader.json
 data/online_reader.tmp
+# Benchmark pages and results (scripts/claude_batch.py): real business records
+data/benchmark/

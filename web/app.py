@@ -484,6 +484,16 @@ def inject_user() -> dict:
     return {"user": g.get("user")}
 
 
+@app.context_processor
+def inject_reader() -> dict:
+    """Which reader will read an upload, for the line under the upload form:
+    "claude" (this app has the key), "online" (a laptop connected to the
+    online app) or "free" (a laptop that isn't)."""
+    if claude_reader.is_enabled():
+        return {"reader_mode": "claude"}
+    return {"reader_mode": "online" if online_reader.is_enabled() else "free"}
+
+
 def _safe_target(target: str | None) -> str:
     """*target* if it is a path on this site, else the home page."""
     if not target or not target.startswith("/") or target.startswith("//") or "\\" in target:
@@ -738,7 +748,8 @@ def account():
                               (g.user["id"],)).fetchone()[0]
     online = None
     if not claude_reader.is_enabled():  # a laptop: offer reading through the online app
-        online = {"config": online_reader.config(), "status": None, "error": None}
+        online = {"config": online_reader.config(), "status": None, "error": None,
+                  "default_url": os.environ.get("LEDGER_ONLINE_APP_URL", "")}
         if online["config"]:
             try:
                 online["status"] = online_reader.status()
